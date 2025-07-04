@@ -54,7 +54,7 @@
 
     ```bash
     # 使用所有必要权限运行
-    deno run -A main.ts
+    deno run -A image-gen.ts
     ```
 
 ### 在 Deno Deploy 上运行
