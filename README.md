@@ -1,4 +1,4 @@
-# Pollination-like Image Proxy Server
+# Pollinations-like Image Proxy Server
 
 [中文版](./README-zh.md)
 

@@ -1,5 +1,5 @@
 
-# 类 Pollination 图像代理服务器
+# 类 Pollinations 图像代理服务器
 
 [English Version](./README.md)
 
