@@ -1,5 +1,7 @@
 # Pollination-like Image Proxy Server
 
+![中文版](./README_zh.md)
+
 *An ultra-lightweight proxy that turns text prompts into images via multiple AI back-ends, with smart caching and optional cloud hosting.*
 
 [![Deno](https://img.shields.io/badge/Deno-000000?style=for-the-badge&logo=deno&logoColor=white)](https://deno.land/)
