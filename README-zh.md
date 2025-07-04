@@ -1,7 +1,7 @@
 
 # 类 Pollination 图像代理服务器
 
-![English Version](./README.md)
+[English Version](./README.md)
 
 *一个超轻量级的代理服务，可通过多个 AI 后端将文本提示词转换为图像，并具备智能缓存和可选的云图床托管功能。*
 

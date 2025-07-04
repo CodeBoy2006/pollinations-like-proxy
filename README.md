@@ -1,6 +1,6 @@
 # Pollination-like Image Proxy Server
 
-![中文版](./README_zh.md)
+[中文版](./README-zh.md)
 
 *An ultra-lightweight proxy that turns text prompts into images via multiple AI back-ends, with smart caching and optional cloud hosting.*
 
