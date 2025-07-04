@@ -98,7 +98,7 @@ Configure the proxy by creating a `.env` file in the project root. For Deno Depl
 ## 🏁 Example
 
 ```bash
-# Request an image with specific parameters
+# Request an image with specific parameters (To use the image hosting feature, you must enable the KV functionality with the `--unstable-kv` flag.)
 curl "http://localhost:8080/prompt/a red apple?key=a-very-secret-user-key&width=1024&height=1024&seed=7&model=flux-dev"
 ```
 
