@@ -16,7 +16,7 @@ const args = parse(Deno.args, {
     "backend-weights",
     "model-map",
     "token-map",
-    "blocked-retry-attempts", // New: Limit for retrying on blocked status
+    "blocked-retry-attempts",
     "image-hosting-provider",
     "image-hosting-key",
     "image-hosting-url",
@@ -27,7 +27,7 @@ const args = parse(Deno.args, {
     port: "8080",
     "cache-dir": "./image_file_cache",
     "image-hosting-enabled": false,
-    "blocked-retry-attempts": "2", // Default to trying 2 backends if one blocks
+    "blocked-retry-attempts": "2",
   },
 });
 
@@ -59,13 +59,35 @@ if (MODEL_MAP_RAW) { try { modelMap = JSON.parse(MODEL_MAP_RAW); } catch (e) { c
 let tokenMap: Record<string, string> = {};
 if (TOKEN_MAP_RAW) { try { tokenMap = JSON.parse(TOKEN_MAP_RAW); } catch (e) { console.error(`FATAL: Invalid JSON in --token-map or TOKEN_MAP: ${e.message}`); Deno.exit(1); } }
 
-// --- (initializeBackends function is unchanged)
 let weightedBackends: string[] = [];
 const backendWeights: Record<string, number> = {};
-function initializeBackends() { const weights: Record<string, number> = {}; if (BACKEND_WEIGHTS_RAW) { try { Object.assign(weights, JSON.parse(BACKEND_WEIGHTS_RAW)); } catch (e) { console.error(`FATAL: Invalid JSON in --backend-weights or BACKEND_WEIGHTS: ${e.message}`); Deno.exit(1); } } weightedBackends = []; for (const url of BACKEND_API_URLS) { const weight = weights[url] ?? 1; if (typeof weight !== 'number' || weight < 0) { console.warn(`WARNING: Invalid weight for backend ${url}. Using default weight of 1.`); backendWeights[url] = 1; } else { backendWeights[url] = weight; } for (let i = 0; i < backendWeights[url]; i++) { weightedBackends.push(url); } } if (weightedBackends.length === 0) { console.warn("WARNING: No backends available after applying weights. Falling back to equal weighting."); weightedBackends = [...BACKEND_API_URLS]; BACKEND_API_URLS.forEach(url => backendWeights[url] = 1); } }
-initializeBackends();
+function initializeBackends() {
+    const weights: Record<string, number> = {};
+    if (BACKEND_WEIGHTS_RAW) {
+        try { Object.assign(weights, JSON.parse(BACKEND_WEIGHTS_RAW)); }
+        catch (e) { console.error(`FATAL: Invalid JSON in --backend-weights or BACKEND_WEIGHTS: ${e.message}`); Deno.exit(1); }
+    }
+    weightedBackends = [];
+    for (const url of BACKEND_API_URLS) {
+        const weight = weights[url] ?? 1;
+        if (typeof weight !== 'number' || weight < 0) {
+            console.warn(`WARNING: Invalid weight for backend ${url}. Using default weight of 1.`);
+            backendWeights[url] = 1;
+        } else {
+            backendWeights[url] = weight;
+        }
+        for (let i = 0; i < backendWeights[url]; i++) {
+            weightedBackends.push(url);
+        }
+    }
+    if (weightedBackends.length === 0) {
+        console.warn("WARNING: No backends available after applying weights. Falling back to equal weighting.");
+        weightedBackends = [...BACKEND_API_URLS];
+        BACKEND_API_URLS.forEach(url => backendWeights[url] = 1);
+    }
+}
+initializeBackends(); // This is now correctly used again.
 
-// --- (Image hosting validation is unchanged)
 if (IMAGE_HOSTING_ENABLED) { if (!IMAGE_HOSTING_PROVIDER) { console.error("FATAL: Image Hosting is enabled, but provider is not set."); Deno.exit(1); } switch(IMAGE_HOSTING_PROVIDER) { case 'smms': if (!IMAGE_HOSTING_KEY) { console.error("FATAL: SM.MS provider requires an API key."); Deno.exit(1); } break; case 'picgo': if (!IMAGE_HOSTING_KEY || !IMAGE_HOSTING_URL) { console.error("FATAL: PicGo provider requires an API key and URL."); Deno.exit(1); } break; case 'cloudflare_imgbed': if (!IMAGE_HOSTING_URL) { console.error("FATAL: Cloudflare Imgbed provider requires a URL."); Deno.exit(1); } break; default: console.error(`FATAL: Unknown image hosting provider '${IMAGE_HOSTING_PROVIDER}'.`); Deno.exit(1); } }
 
 console.log("--- Proxy Configuration ---");
@@ -105,32 +127,45 @@ async function deleteFromFsCache(hash: string): Promise<boolean> { const { dataP
 type GenerationResult = | { status: "success"; imageData: Uint8Array; contentType: string; revisedPrompt?: string } | { status: "blocked"; reason: string } | { status: "error"; reason: string };
 async function fetchImageFromUrl(imageUrl: string): Promise<{ data: Uint8Array, contentType: string } | null> { try { const response = await fetch(imageUrl); if (!response.ok) { console.error(`[FETCH] Failed to fetch image from ${imageUrl}: ${response.status}`); return null; } const contentType = response.headers.get("content-type") || "image/png"; const arrayBuffer = await response.arrayBuffer(); return { data: new Uint8Array(arrayBuffer), contentType }; } catch (e) { console.error(`[FETCH] Error fetching image data from ${imageUrl}:`, e); return null; } }
 
-async function generateImageFromBackend(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<GenerationResult> {
-    const uniqueBackends = [...new Set(BACKEND_API_URLS)];
-    const shuffledBackends = uniqueBackends.sort(() => 0.5 - Math.random());
+function getNextBackendUrl(exclude: string[] = []): string | null {
+    const availableBackends = weightedBackends.filter(b => !exclude.includes(b));
+    if (availableBackends.length === 0) return null;
+    const randomIndex = Math.floor(Math.random() * availableBackends.length);
+    return availableBackends[randomIndex];
+}
 
+async function generateImageFromBackend(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<GenerationResult> {
+    const uniqueBackendCount = new Set(BACKEND_API_URLS).size;
+    const maxAttempts = Math.max(uniqueBackendCount, BLOCKED_RETRY_ATTEMPTS);
+    
     let lastResult: GenerationResult = { status: "error", reason: "No backends were available or all failed." };
     let blockedAttempts = 0;
+    const triedBackends: string[] = [];
 
-    for (const backendUrl of shuffledBackends) {
+    for (let i = 0; i < maxAttempts; i++) {
+        const backendUrl = getNextBackendUrl(triedBackends);
+
+        if (!backendUrl) {
+            console.log("[BACKEND] No more available backends to try.");
+            break;
+        }
+        triedBackends.push(backendUrl);
+
         if (blockedAttempts >= BLOCKED_RETRY_ATTEMPTS) {
-            console.log(`[MODERATION] Blocked retry limit (${BLOCKED_RETRY_ATTEMPTS}) reached. Aborting backend attempts.`);
+            console.log(`[MODERATION] Blocked retry limit (${BLOCKED_RETRY_ATTEMPTS}) reached.`);
             lastResult = { status: "blocked", reason: `Request was blocked by ${blockedAttempts} backends.` };
-            break; // Exit the loop as we've hit our block limit
+            break;
         }
 
         const requestUrl = `${backendUrl}/v1/images/generations`;
         const effectiveModel = model && modelMap[backendUrl]?.[model] ? modelMap[backendUrl][model] : model;
-
-        if (model && effectiveModel !== model) {
-            console.log(`[BACKEND] Mapping model "${model}" to "${effectiveModel}" for ${backendUrl}`);
-        }
+        if (model && effectiveModel !== model) { console.log(`[BACKEND] Mapping model "${model}" to "${effectiveModel}" for ${backendUrl}`); }
 
         const payload: Record<string, any> = { prompt: description, n: 1, seed: seed };
         if (effectiveModel) payload.model = effectiveModel;
         if (width && height) payload.size = `${width}x${height}`;
         
-        console.log(`[BACKEND] Attempting request to ${backendUrl} (Model: ${effectiveModel || 'default'})`);
+        console.log(`[BACKEND] Attempt #${i + 1}: Request to ${backendUrl} (Model: ${effectiveModel || 'default'})`);
         
         try {
             const headers: HeadersInit = { "Content-Type": "application/json", "Accept": "application/json" };
@@ -171,11 +206,9 @@ async function generateImageFromBackend(description: string, width?: number, hei
                 console.log(`[BACKEND] SUCCESS: Fetched image data from ${backendUrl}`);
                 return { status: "success", imageData: imageResult.data, contentType: imageResult.contentType, revisedPrompt: data.revised_prompt };
             }
-
         } catch (e) {
             lastResult = { status: "error", reason: `Network error for ${backendUrl}: ${e.message}` };
             console.error(`[ATTEMPT_FAIL] ${lastResult.reason}. Trying next backend...`);
-            continue;
         }
     }
     
@@ -190,7 +223,6 @@ function createFallbackResponse(description: string, width?: number, height?: nu
     fallbackUrl.searchParams.set("nofeed", "true");
     if (width) fallbackUrl.searchParams.set("width", String(width));
     if (height) fallbackUrl.searchParams.set("height", String(height));
-    
     return Response.redirect(fallbackUrl.href, Status.Found);
 }
 
@@ -227,12 +259,9 @@ async function handler(request: Request): Promise<Response> {
             const { imageData, contentType, revisedPrompt } = genResult;
             if (IMAGE_HOSTING_ENABLED) {
                 const uploader = ImageUploaderFactory.create();
-                if (!uploader) return new Response("Image uploader not configured.", { status: Status.InternalServerError });
+                if (!uploader) { console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); return createFallbackResponse(description, width, height); }
                 const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
-                if (!upload?.url) {
-                    console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback.");
-                    return createFallbackResponse(description, width, height);
-                }
+                if (!upload?.url) { console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); return createFallbackResponse(description, width, height); }
                 await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt });
                 return Response.redirect(upload.url, Status.Found);
             } else {
@@ -241,9 +270,7 @@ async function handler(request: Request): Promise<Response> {
                 return new Response(imageData, { headers: { "Content-Type": contentType } });
             }
         } else {
-            // Ultimate Fallback for ANY error ('blocked' or 'error')
             console.log(`[FALLBACK] Generation failed (Status: ${genResult.status}). Reason: ${genResult.reason}. Using fallback.`);
-            // Only cache as "blocked" if the final failure was indeed a block, not a transient error.
             if (genResult.status === 'blocked') {
                 console.log(`[CACHE] Marking prompt as permanently blocked: ${cacheHash}`);
                 if (IMAGE_HOSTING_ENABLED) { await addToKvCache(cacheHash, { blocked: true }); }
