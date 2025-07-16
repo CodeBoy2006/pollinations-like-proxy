@@ -13,8 +13,11 @@
 
 | Feature                 | Description                                                                 |
 | ----------------------- | --------------------------------------------------------------------------- |
-| **Multi-Backend Support** | Round-robin load balancing across any number of OpenAI-compatible endpoints.    |
+| **Multi-Backend Support** | Weighted load balancing across any number of OpenAI-compatible endpoints with per-backend token support.    |
+| **Base64 & URL Support** | Handles both Base64 image data and URL responses from backends automatically. |
+| **Model Mapping** | Map model names per backend for seamless compatibility across different providers. |
 | **Dual Cache Strategy** | Uses **Deno KV** for serverless (Deno Deploy) or **Local Filesystem** for self-hosting. |
+| **Content Moderation** | Automatically caches and handles blocked content to prevent repeated processing. |
 | **Pluggable Image Hosting** | Built-in support for `smms`, `picgo`, and `cloudflare_imgbed`.                |
 | **Reproducible Results**  | Full control over `seed` (default `42`), `model`, `width`, and `height`.        |
 | **Secure by Default**   | Requires `?key=` for user access and `X-Admin-Token` for admin operations. |
@@ -34,10 +37,18 @@
     PROXY_ACCESS_KEY="a-very-secret-user-key"
 
     # --- Optional Settings ---
-    # Token for authenticating with backend APIs
+    # Global fallback token for authenticating with backend APIs
     AUTH_TOKEN="sk-backend-api-key"
     PORT=8080
     CACHE_DIR="./image_file_cache"
+
+    # --- Advanced Backend Configuration ---
+    # Backend weights for load balancing (JSON format)
+    BACKEND_WEIGHTS='{"https://api1.example.com/v1": 2, "https://api2.example.com/v1": 1}'
+    # Model mapping per backend (JSON format)
+    MODEL_MAP='{"https://api1.example.com/v1": {"flux-dev": "flux-1-dev"}, "https://api2.example.com/v1": {"flux-dev": "flux-dev-fp8"}}'
+    # Per-backend authentication tokens (JSON format)
+    TOKEN_MAP='{"https://api1.example.com/v1": "sk-api1-token", "https://api2.example.com/v1": "sk-api2-token"}'
 
     # --- Image Hosting (Recommended for Deno Deploy) ---
     IMAGE_HOSTING_ENABLED=true
@@ -73,9 +84,13 @@ Configure the proxy by creating a `.env` file in the project root. For Deno Depl
 | ------------------------- | --------------------- | ------------------------------------------------------------- |
 | `BACKEND_API_URLS`        | **✓**                 | Comma-separated list of backend URLs. `https://api1,https://api2` |
 | `PROXY_ACCESS_KEY`        | **✓**                 | The access key required by clients. `my-access-key`           |
-| `AUTH_TOKEN`              | -                     | Bearer token for authenticating with backend APIs.            |
+| `AUTH_TOKEN`              | -                     | Global fallback Bearer token for authenticating with backend APIs. |
 | `PORT`                    | -                     | Port for the proxy server. Defaults to `8080`.                |
 | `CACHE_DIR` | - | Local file system cache directory. Default is `./image_file_cache`|
+| **Advanced Backend Config** |                    |                                                               |
+| `BACKEND_WEIGHTS`         | -                     | JSON object defining weights for load balancing. `{"url1": 2, "url2": 1}` |
+| `MODEL_MAP`               | -                     | JSON object mapping model names per backend. `{"url1": {"model": "mapped-model"}}` |
+| `TOKEN_MAP`               | -                     | JSON object with per-backend authentication tokens. `{"url1": "token1"}` |
 | **Image Hosting**         |                       |                                                               |
 | `IMAGE_HOSTING_ENABLED`   | -                     | `true` to enable KV cache & image hosting.                    |
 | `IMAGE_HOSTING_PROVIDER`  | If hosting is enabled | `smms` \| `picgo` \| `cloudflare_imgbed`                      |
@@ -108,6 +123,11 @@ The first call generates the image and populates the cache. Subsequent identical
 
 ## 📝 Notes
 
+-   **Backend Support**: The proxy automatically handles both Base64 image data and URL responses from backends.
+-   **Content Moderation**: Blocked prompts are cached to prevent repeated processing and return a 403 Forbidden status.
+-   **Load Balancing**: Use `BACKEND_WEIGHTS` to control traffic distribution across backends (higher weight = more requests).
+-   **Model Mapping**: Use `MODEL_MAP` to translate model names per backend for compatibility across different providers.
+-   **Authentication**: `TOKEN_MAP` allows per-backend tokens, with `AUTH_TOKEN` as a global fallback.
 -   If `IMAGE_HOSTING_ENABLED=false`, the proxy writes image binaries to the local `CACHE_DIR`. This mode is not compatible with Deno Deploy.
 -   The cache key is a SHA-256 hash of the combined request parameters: `prompt|width|height|model|seed`. Changing any parameter results in a new image.
 
