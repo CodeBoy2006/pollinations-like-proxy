@@ -15,6 +15,8 @@
 | 功能 | 描述 |
 | ----------------------- | --------------------------------------------------------------------------- |
 | **多后端支持** | 加权负载均衡，支持任意数量的 OpenAI 兼容端点，并支持每个后端独立的 token 配置。 |
+| **智能重试逻辑** | 可配置的重试次数，当内容被阻止时尝试不同的后端。 |
+| **后备集成** | 当所有后端失败或阻止内容时，自动后备到 Pollinations.ai。 |
 | **Base64 和 URL 支持** | 自动处理来自后端的 Base64 图像数据和 URL 响应。 |
 | **模型映射** | 为每个后端映射模型名称，实现不同提供商之间的无缝兼容。 |
 | **双缓存策略** | 使用 **Deno KV** (适用于 Deno Deploy) 或 **本地文件系统** (适用于自托管)。 |
@@ -50,6 +52,8 @@
     MODEL_MAP='{"https://api1.example.com/v1": {"flux-dev": "flux-1-dev"}, "https://api2.example.com/v1": {"flux-dev": "flux-dev-fp8"}}'
     # 每个后端的身份验证 token (JSON 格式)
     TOKEN_MAP='{"https://api1.example.com/v1": "sk-api1-token", "https://api2.example.com/v1": "sk-api2-token"}'
+    # 内容被阻止时尝试的后端数量 (默认: 2)
+    BLOCKED_RETRY_ATTEMPTS=2
 
     # --- 图床托管 (Deno Deploy 推荐) ---
     IMAGE_HOSTING_ENABLED=true
@@ -92,6 +96,7 @@ Deno Deploy 不使用 `.env` 文件。请在您项目的 **Settings > Environmen
 | `BACKEND_WEIGHTS` | - | 定义负载均衡权重的 JSON 对象。`{"url1": 2, "url2": 1}` |
 | `MODEL_MAP` | - | 每个后端模型名称映射的 JSON 对象。`{"url1": {"model": "mapped-model"}}` |
 | `TOKEN_MAP` | - | 每个后端身份验证 token 的 JSON 对象。`{"url1": "token1"}` |
+| `BLOCKED_RETRY_ATTEMPTS` | - | 内容被阻止时尝试的后端数量。默认为 `2`。 |
 | **图床托管** | | |
 | `IMAGE_HOSTING_ENABLED` | - | 设置为 `true` 以启用 KV 缓存和图床托管。 |
 | `IMAGE_HOSTING_PROVIDER` | 若托管已启用 | `smms` \| `picgo` \| `cloudflare_imgbed` |
@@ -125,7 +130,9 @@ curl "http://localhost:8080/prompt/a red apple?key=a-very-secret-user-key&width=
 ## 📝 注意事项
 
 -   **后端支持**：代理自动处理来自后端的 Base64 图像数据和 URL 响应。
--   **内容审核**：被阻止的提示词会被缓存以防止重复处理，并返回 403 Forbidden 状态。
+-   **智能重试逻辑**：配置 `BLOCKED_RETRY_ATTEMPTS` 控制内容被阻止时尝试多少个后端（默认：2）。
+-   **自动后备**：当所有后端失败或阻止内容时，代理自动后备到 Pollinations.ai。
+-   **内容审核**：被阻止的提示词会被缓存以防止重复处理。缓存的被阻止内容会触发后备。
 -   **负载均衡**：使用 `BACKEND_WEIGHTS` 控制后端间的流量分配（权重越高 = 请求越多）。
 -   **模型映射**：使用 `MODEL_MAP` 为每个后端转换模型名称，实现不同提供商间的兼容性。
 -   **身份验证**：`TOKEN_MAP` 允许每个后端使用独立的 token，`AUTH_TOKEN` 作为全局后备。

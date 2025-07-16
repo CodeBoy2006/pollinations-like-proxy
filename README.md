@@ -14,6 +14,8 @@
 | Feature                 | Description                                                                 |
 | ----------------------- | --------------------------------------------------------------------------- |
 | **Multi-Backend Support** | Weighted load balancing across any number of OpenAI-compatible endpoints with per-backend token support.    |
+| **Smart Retry Logic** | Configurable retry attempts for blocked content across different backends. |
+| **Fallback Integration** | Automatic fallback to Pollinations.ai when all backends fail or block content. |
 | **Base64 & URL Support** | Handles both Base64 image data and URL responses from backends automatically. |
 | **Model Mapping** | Map model names per backend for seamless compatibility across different providers. |
 | **Dual Cache Strategy** | Uses **Deno KV** for serverless (Deno Deploy) or **Local Filesystem** for self-hosting. |
@@ -49,6 +51,8 @@
     MODEL_MAP='{"https://api1.example.com/v1": {"flux-dev": "flux-1-dev"}, "https://api2.example.com/v1": {"flux-dev": "flux-dev-fp8"}}'
     # Per-backend authentication tokens (JSON format)
     TOKEN_MAP='{"https://api1.example.com/v1": "sk-api1-token", "https://api2.example.com/v1": "sk-api2-token"}'
+    # Number of backends to try when content is blocked (default: 2)
+    BLOCKED_RETRY_ATTEMPTS=2
 
     # --- Image Hosting (Recommended for Deno Deploy) ---
     IMAGE_HOSTING_ENABLED=true
@@ -91,6 +95,7 @@ Configure the proxy by creating a `.env` file in the project root. For Deno Depl
 | `BACKEND_WEIGHTS`         | -                     | JSON object defining weights for load balancing. `{"url1": 2, "url2": 1}` |
 | `MODEL_MAP`               | -                     | JSON object mapping model names per backend. `{"url1": {"model": "mapped-model"}}` |
 | `TOKEN_MAP`               | -                     | JSON object with per-backend authentication tokens. `{"url1": "token1"}` |
+| `BLOCKED_RETRY_ATTEMPTS`  | -                     | Number of backends to try when content is blocked. Defaults to `2`. |
 | **Image Hosting**         |                       |                                                               |
 | `IMAGE_HOSTING_ENABLED`   | -                     | `true` to enable KV cache & image hosting.                    |
 | `IMAGE_HOSTING_PROVIDER`  | If hosting is enabled | `smms` \| `picgo` \| `cloudflare_imgbed`                      |
@@ -124,7 +129,9 @@ The first call generates the image and populates the cache. Subsequent identical
 ## 📝 Notes
 
 -   **Backend Support**: The proxy automatically handles both Base64 image data and URL responses from backends.
--   **Content Moderation**: Blocked prompts are cached to prevent repeated processing and return a 403 Forbidden status.
+-   **Smart Retry Logic**: Configure `BLOCKED_RETRY_ATTEMPTS` to control how many backends to try when content is blocked (default: 2).
+-   **Automatic Fallback**: When all backends fail or block content, the proxy automatically falls back to Pollinations.ai.
+-   **Content Moderation**: Blocked prompts are cached to prevent repeated processing. Cached blocked content triggers fallback.
 -   **Load Balancing**: Use `BACKEND_WEIGHTS` to control traffic distribution across backends (higher weight = more requests).
 -   **Model Mapping**: Use `MODEL_MAP` to translate model names per backend for compatibility across different providers.
 -   **Authentication**: `TOKEN_MAP` allows per-backend tokens, with `AUTH_TOKEN` as a global fallback.
