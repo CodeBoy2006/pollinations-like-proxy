@@ -69,6 +69,43 @@ async function generateCacheHash(description: string, width?: number, height?: n
     return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+// Utility function to decode base64 string to Uint8Array
+function base64ToUint8Array(base64: string): Uint8Array {
+    // Remove data URL prefix if present
+    const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');
+    const binaryString = atob(cleanBase64);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    return bytes;
+}
+
+// Utility function to detect content type from base64 image data
+function detectContentTypeFromBase64(base64: string): string {
+    const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, '');
+    
+    // Check for PNG signature
+    if (cleanBase64.startsWith('iVBORw0KGgo')) {
+        return 'image/png';
+    }
+    // Check for JPEG signature
+    if (cleanBase64.startsWith('/9j/')) {
+        return 'image/jpeg';
+    }
+    // Check for GIF signature
+    if (cleanBase64.startsWith('R0lGODlh') || cleanBase64.startsWith('R0lGODdh')) {
+        return 'image/gif';
+    }
+    // Check for WebP signature
+    if (cleanBase64.includes('UklGR') && cleanBase64.includes('V0VCUw')) {
+        return 'image/webp';
+    }
+    
+    // Default to PNG if we can't detect
+    return 'image/png';
+}
+
 interface ImageUploader {
     upload(data: Uint8Array, filename: string): Promise<{ url: string } | null>;
 }
@@ -141,30 +178,31 @@ class ImageUploaderFactory {
 }
 
 let kv: Deno.Kv | null = null;
-interface KvCacheEntry { hostedUrl: string; revisedPrompt?: string; }
+interface KvCacheEntry { hostedUrl?: string; revisedPrompt?: string; blocked?: boolean; }
 async function getFromKvCache(hash: string): Promise<KvCacheEntry | null> { return kv ? (await kv.get<KvCacheEntry>(["images", hash])).value : null; }
-async function addToKvCache(hash: string, hostedUrl: string, revisedPrompt?: string): Promise<void> { if (kv) { await kv.set(["images", hash], { hostedUrl, revisedPrompt }); console.log(`[CACHE_KV] Added: ${hash}`); } }
+async function addToKvCache(hash: string, entry: KvCacheEntry): Promise<void> { if (kv) { await kv.set(["images", hash], entry); console.log(`[CACHE_KV] Added${entry.blocked ? ' (blocked)' : ''}: ${hash}`); } }
 async function deleteFromKvCache(hash: string): Promise<boolean> { if (!kv) return false; const res = await kv.atomic().check({ key: ["images", hash], versionstamp: null }).delete(["images", hash]).commit(); return res.ok; }
 
-interface FsCacheEntry { data: Uint8Array; contentType: string; revisedPrompt?: string; }
-interface FsCacheMetadata { contentType: string; originalUrl: string; revisedPrompt?: string; createdAt: string; }
+interface FsCacheEntry { data?: Uint8Array; contentType?: string; revisedPrompt?: string; blocked?: boolean; }
+interface FsCacheMetadata { contentType?: string; originalUrl?: string; revisedPrompt?: string; createdAt: string; blocked?: boolean; }
 function getCacheFilePaths(hash: string) { return { dataPath: join(CACHE_DIR, `${hash}.data`), metaPath: join(CACHE_DIR, `${hash}.meta.json`) }; }
 async function getFromFsCache(hash: string): Promise<FsCacheEntry | null> {
     const { dataPath, metaPath } = getCacheFilePaths(hash);
     try {
-        const [metaStat, dataStat] = await Promise.all([ Deno.stat(metaPath).catch(() => null), Deno.stat(dataPath).catch(() => null) ]);
-        if (!metaStat || !dataStat) return null;
+        if (!(await Deno.stat(metaPath).catch(() => null))) return null;
         const metadata = JSON.parse(await Deno.readTextFile(metaPath)) as FsCacheMetadata;
+        if (metadata.blocked) return { blocked: true, revisedPrompt: metadata.revisedPrompt };
         const data = await Deno.readFile(dataPath);
         return { data, contentType: metadata.contentType, revisedPrompt: metadata.revisedPrompt };
     } catch (e) { if (!(e instanceof Deno.errors.NotFound)) console.error(`[CACHE_FS] Read error for ${hash}:`, e); return null; }
 }
-async function addToFsCache(hash: string, data: Uint8Array, contentType: string, originalUrl: string, revisedPrompt?: string): Promise<void> {
+async function addToFsCache(hash: string, metadata: FsCacheMetadata, data?: Uint8Array): Promise<void> {
     const { dataPath, metaPath } = getCacheFilePaths(hash);
-    const metadata: FsCacheMetadata = { contentType, originalUrl, revisedPrompt, createdAt: new Date().toISOString() };
     try {
-        await Promise.all([ Deno.writeFile(dataPath, data), Deno.writeTextFile(metaPath, JSON.stringify(metadata, null, 2)) ]);
-        console.log(`[CACHE_FS] Added: ${hash}`);
+        const promises = [ Deno.writeTextFile(metaPath, JSON.stringify(metadata, null, 2)) ];
+        if (data && !metadata.blocked) { promises.push(Deno.writeFile(dataPath, data)); }
+        await Promise.all(promises);
+        console.log(`[CACHE_FS] Added${metadata.blocked ? ' (blocked)' : ''}: ${hash}`);
     } catch (e) { console.error(`[CACHE_FS] Write error for ${hash}:`, e); }
 }
 async function deleteFromFsCache(hash: string): Promise<boolean> {
@@ -176,22 +214,90 @@ async function deleteFromFsCache(hash: string): Promise<boolean> {
 let currentBackendIndex = 0;
 function getNextBackendUrl(): string { const url = BACKEND_API_URLS[currentBackendIndex]; currentBackendIndex = (currentBackendIndex + 1) % BACKEND_API_URLS.length; return url; }
 
-async function generateImageFromBackend(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<{ imageUrl: string; revisedPrompt?: string } | null> {
+type GenerationResult = 
+    | { status: "success"; imageData: Uint8Array; contentType: string; revisedPrompt?: string }
+    | { status: "blocked"; reason: string }
+    | { status: "error"; reason: string };
+
+async function generateImageFromBackend(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<GenerationResult> {
     const backendUrl = getNextBackendUrl();
     const requestUrl = `${backendUrl}/v1/images/generations`;
     const payload: Record<string, any> = { prompt: description, n: 1, seed: seed };
     if (model) payload.model = model;
     if (width && height) payload.size = `${width}x${height}`;
     console.log(`[BACKEND] Request to ${requestUrl} with seed ${seed}`);
+    
     try {
         const headers: HeadersInit = { "Content-Type": "application/json", "Accept": "application/json" };
         if (AUTH_TOKEN) headers["Authorization"] = `Bearer ${AUTH_TOKEN}`;
         const res = await fetch(requestUrl, { method: "POST", headers, body: JSON.stringify(payload) });
-        if (!res.ok) { console.error(`[BACKEND] Error: ${res.status} from ${requestUrl}`); return null; }
+
+        if (res.status === Status.ServiceUnavailable) { // 503 error
+            const reason = `Backend returned 503 Service Unavailable`;
+            console.error(`[BACKEND] Blocked: ${reason} from ${requestUrl}`);
+            return { status: "blocked", reason };
+        }
+        if (!res.ok) {
+            const reason = `Backend returned error: ${res.status} from ${requestUrl}`;
+            console.error(`[BACKEND] Error: ${reason}`);
+            return { status: "error", reason };
+        }
+
         const json = await res.json();
         const data = json.data?.[0];
-        return data?.url ? { imageUrl: data.url, revisedPrompt: data.revised_prompt } : null;
-    } catch (e) { console.error(`[BACKEND] Network error for ${requestUrl}:`, e); return null; }
+        
+        if (!data) {
+            const reason = "Backend returned 200 OK but no data array (likely moderated)";
+            console.warn(`[BACKEND] Blocked: ${reason}`);
+            return { status: "blocked", reason };
+        }
+
+        // Handle base64 response format
+        if (data.b64_json) {
+            console.log(`[BACKEND] Received base64 image data`);
+            try {
+                const imageData = base64ToUint8Array(data.b64_json);
+                const contentType = detectContentTypeFromBase64(data.b64_json);
+                return { 
+                    status: "success", 
+                    imageData, 
+                    contentType, 
+                    revisedPrompt: data.revised_prompt 
+                };
+            } catch (e) {
+                const reason = `Failed to decode base64 image data: ${e.message}`;
+                console.error(`[BACKEND] Error: ${reason}`);
+                return { status: "error", reason };
+            }
+        }
+        
+        // Handle URL response format
+        if (data.url) {
+            console.log(`[BACKEND] Received image URL: ${data.url}`);
+            const imageResult = await fetchImageFromUrl(data.url);
+            if (!imageResult) {
+                const reason = `Failed to fetch image from URL: ${data.url}`;
+                console.error(`[BACKEND] Error: ${reason}`);
+                return { status: "error", reason };
+            }
+            return { 
+                status: "success", 
+                imageData: imageResult.data, 
+                contentType: imageResult.contentType, 
+                revisedPrompt: data.revised_prompt 
+            };
+        }
+
+        // No valid image data found
+        const reason = "Backend returned 200 OK but no image URL or base64 data (likely moderated)";
+        console.warn(`[BACKEND] Blocked: ${reason}`);
+        return { status: "blocked", reason };
+        
+    } catch (e) {
+        const reason = `Network error for ${requestUrl}: ${e.message}`;
+        console.error(`[BACKEND] Network error:`, e);
+        return { status: "error", reason };
+    }
 }
 
 async function fetchImageFromUrl(imageUrl: string): Promise<{ data: Uint8Array, contentType: string } | null> {
@@ -207,7 +313,8 @@ async function fetchImageFromUrl(imageUrl: string): Promise<{ data: Uint8Array, 
 async function handler(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const pathSegments = url.pathname.split("/").filter(Boolean);
-
+    const PROMPT_BLOCKED_RESPONSE = new Response("Prompt was blocked by content policy.", { status: Status.Forbidden });
+    
     // Image generation endpoint
     if (request.method === "GET" && pathSegments[0] === "prompt" && pathSegments.length > 1) {
         if (url.searchParams.get("key") !== PROXY_ACCESS_KEY) {
@@ -222,30 +329,54 @@ async function handler(request: Request): Promise<Response> {
         console.log(`[REQUEST] Prompt: "${description}", Seed: ${seed}`);
         const cacheHash = await generateCacheHash(description, width, height, model, seed);
 
+        // --- CACHE CHECK ---
+        const cached = IMAGE_HOSTING_ENABLED ? await getFromKvCache(cacheHash) : await getFromFsCache(cacheHash);
+        if (cached) {
+            if (cached.blocked) {
+                console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] BLOCKED_HIT: ${cacheHash}`);
+                return PROMPT_BLOCKED_RESPONSE;
+            }
+            console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] HIT: ${cacheHash}`);
+            if (IMAGE_HOSTING_ENABLED) {
+                return Response.redirect((cached as KvCacheEntry).hostedUrl!, Status.Found);
+            } else {
+                const fsEntry = cached as FsCacheEntry;
+                return new Response(fsEntry.data, { headers: { "Content-Type": fsEntry.contentType! } });
+            }
+        }
+        console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] MISS: ${cacheHash}`);
+
+        // --- BACKEND GENERATION ---
+        const genResult = await generateImageFromBackend(description, width, height, model, seed);
+        
+        switch (genResult.status) {
+            case "blocked":
+                console.log(`[MODERATION] Prompt blocked by backend. Caching as blocked: ${cacheHash}`);
+                if (IMAGE_HOSTING_ENABLED) {
+                    await addToKvCache(cacheHash, { blocked: true });
+                } else {
+                    await addToFsCache(cacheHash, { blocked: true, createdAt: new Date().toISOString() });
+                }
+                return PROMPT_BLOCKED_RESPONSE;
+
+            case "error":
+                return new Response(`Backend failed to generate image: ${genResult.reason}`, { status: Status.ServiceUnavailable });
+        }
+
+        // --- SUCCESS CASE ---
+        const { imageData, contentType, revisedPrompt } = genResult;
+        
         if (IMAGE_HOSTING_ENABLED) {
-            const cached = await getFromKvCache(cacheHash);
-            if (cached) { console.log(`[CACHE_KV] HIT: ${cacheHash}`); return Response.redirect(cached.hostedUrl, Status.Found); }
-            console.log(`[CACHE_KV] MISS: ${cacheHash}`);
-            const gen = await generateImageFromBackend(description, width, height, model, seed);
-            if (!gen?.imageUrl) return new Response("Backend failed to generate image.", { status: Status.ServiceUnavailable });
-            const img = await fetchImageFromUrl(gen.imageUrl);
-            if (!img) return new Response("Failed to fetch image data.", { status: Status.BadGateway });
             const uploader = ImageUploaderFactory.create();
             if (!uploader) return new Response("Image uploader not configured.", { status: Status.InternalServerError });
-            const upload = await uploader.upload(img.data, `${crypto.randomUUID().substring(0, 12)}.png`);
+            const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
             if (!upload?.url) return new Response("Failed to upload image to hosting provider.", { status: Status.BadGateway });
-            await addToKvCache(cacheHash, upload.url, gen.revisedPrompt);
+            await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt });
             return Response.redirect(upload.url, Status.Found);
         } else {
-            const cached = await getFromFsCache(cacheHash);
-            if (cached) { console.log(`[CACHE_FS] HIT: ${cacheHash}`); return new Response(cached.data, { headers: { "Content-Type": cached.contentType } }); }
-            console.log(`[CACHE_FS] MISS: ${cacheHash}`);
-            const gen = await generateImageFromBackend(description, width, height, model, seed);
-            if (!gen?.imageUrl) return new Response("Backend failed to generate image.", { status: Status.ServiceUnavailable });
-            const img = await fetchImageFromUrl(gen.imageUrl);
-            if (!img) return new Response("Failed to fetch image data.", { status: Status.BadGateway });
-            await addToFsCache(cacheHash, img.data, img.contentType, gen.imageUrl, gen.revisedPrompt);
-            return new Response(img.data, { headers: { "Content-Type": img.contentType } });
+            const metadata: FsCacheMetadata = { contentType, revisedPrompt, createdAt: new Date().toISOString() };
+            await addToFsCache(cacheHash, metadata, imageData);
+            return new Response(imageData, { headers: { "Content-Type": contentType } });
         }
     }
 
