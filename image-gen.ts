@@ -367,3 +367,5 @@ async function main() {
     console.log(`Image proxy listening on http://localhost:${PORT}`);
     Deno.serve({ port: PORT }, handler);
 }
+
+main();
