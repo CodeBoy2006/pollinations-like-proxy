@@ -216,14 +216,90 @@ async function generateImageFromBackend(description: string, width?: number, hei
     return lastResult;
 }
 
-function createFallbackResponse(description: string, width?: number, height?: number): Response {
-    console.log(`[FALLBACK] Redirecting to fallback provider for prompt: "${description}"`);
-    const fallbackUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(description)}`);
-    fallbackUrl.searchParams.set("model", "flux-pro");
-    fallbackUrl.searchParams.set("nofeed", "true");
-    if (width) fallbackUrl.searchParams.set("width", String(width));
-    if (height) fallbackUrl.searchParams.set("height", String(height));
-    return Response.redirect(fallbackUrl.href, Status.Found);
+async function generateImageFromPollinations(description: string, width?: number, height?: number): Promise<{ imageData: Uint8Array; contentType: string } | null> {
+    console.log(`[POLLINATIONS] Generating image from pollinations.ai for prompt: "${description}"`);
+
+    try {
+        const fallbackUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(description)}`);
+        fallbackUrl.searchParams.set("model", "flux-pro");
+        fallbackUrl.searchParams.set("nofeed", "true");
+        if (width) fallbackUrl.searchParams.set("width", String(width));
+        if (height) fallbackUrl.searchParams.set("height", String(height));
+
+        console.log(`[POLLINATIONS] Requesting image from: ${fallbackUrl.href}`);
+
+        const response = await fetch(fallbackUrl.href);
+        if (!response.ok) {
+            console.error(`[POLLINATIONS] Failed to fetch image: ${response.status} ${response.statusText}`);
+            return null;
+        }
+
+        const contentType = response.headers.get("content-type") || "image/png";
+        const arrayBuffer = await response.arrayBuffer();
+        const imageData = new Uint8Array(arrayBuffer);
+
+        console.log(`[POLLINATIONS] Successfully downloaded image (${imageData.length} bytes, ${contentType})`);
+        return { imageData, contentType };
+
+    } catch (error) {
+        console.error(`[POLLINATIONS] Error generating image:`, error);
+        return null;
+    }
+}
+
+async function createFallbackResponse(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<Response> {
+    console.log(`[FALLBACK] Using pollinations.ai fallback for prompt: "${description}"`);
+
+    // Generate cache hash for the fallback request
+    const cacheHash = await generateCacheHash(description, width, height, model, seed);
+
+    // Try to get the image from pollinations.ai
+    const pollinationsResult = await generateImageFromPollinations(description, width, height);
+
+    if (!pollinationsResult) {
+        console.error(`[FALLBACK] Failed to generate image from pollinations.ai`);
+        return new Response("Failed to generate image from fallback provider", {
+            status: Status.InternalServerError,
+            headers: { "Content-Type": "text/plain" }
+        });
+    }
+
+    const { imageData, contentType } = pollinationsResult;
+
+    // Cache the fallback result using the same caching system
+    try {
+        if (IMAGE_HOSTING_ENABLED) {
+            // For KV cache with image hosting, upload to hosting provider
+            const uploader = ImageUploaderFactory.create();
+            if (uploader) {
+                const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
+                if (upload?.url) {
+                    await addToKvCache(cacheHash, { hostedUrl: upload.url });
+                    console.log(`[FALLBACK] Cached fallback image to hosting provider: ${upload.url}`);
+                    return new Response(imageData, { headers: { "Content-Type": contentType } });
+                } else {
+                    console.warn(`[FALLBACK] Failed to upload to hosting provider, returning image directly`);
+                }
+            } else {
+                console.warn(`[FALLBACK] No image uploader configured, returning image directly`);
+            }
+        } else {
+            // For file system cache, store the image data directly
+            const metadata: FsCacheMetadata = {
+                contentType,
+                originalUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(description)}`,
+                createdAt: new Date().toISOString()
+            };
+            await addToFsCache(cacheHash, metadata, imageData);
+            console.log(`[FALLBACK] Cached fallback image to file system`);
+        }
+    } catch (cacheError) {
+        console.error(`[FALLBACK] Failed to cache fallback image:`, cacheError);
+        // Continue to return the image even if caching fails
+    }
+
+    // Return the image data directly to the user
+    return new Response(imageData, { headers: { "Content-Type": contentType } });
 }
 
 async function handler(request: Request): Promise<Response> {
@@ -245,7 +321,7 @@ async function handler(request: Request): Promise<Response> {
         if (cached) {
             if (cached.blocked) {
                 console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] BLOCKED_HIT: ${cacheHash}`);
-                return createFallbackResponse(description, width, height);
+                return await createFallbackResponse(description, width, height, model, seed);
             }
             console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] HIT: ${cacheHash}`);
             if (IMAGE_HOSTING_ENABLED) { return Response.redirect((cached as KvCacheEntry).hostedUrl!, Status.Found); }
@@ -259,9 +335,9 @@ async function handler(request: Request): Promise<Response> {
             const { imageData, contentType, revisedPrompt } = genResult;
             if (IMAGE_HOSTING_ENABLED) {
                 const uploader = ImageUploaderFactory.create();
-                if (!uploader) { console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); return createFallbackResponse(description, width, height); }
+                if (!uploader) { console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); return await createFallbackResponse(description, width, height, model, seed); }
                 const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
-                if (!upload?.url) { console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); return createFallbackResponse(description, width, height); }
+                if (!upload?.url) { console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); return await createFallbackResponse(description, width, height, model, seed); }
                 await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt });
                 return Response.redirect(upload.url, Status.Found);
             } else {
@@ -276,7 +352,7 @@ async function handler(request: Request): Promise<Response> {
                 if (IMAGE_HOSTING_ENABLED) { await addToKvCache(cacheHash, { blocked: true }); }
                 else { await addToFsCache(cacheHash, { blocked: true, createdAt: new Date().toISOString() }); }
             }
-            return createFallbackResponse(description, width, height);
+            return await createFallbackResponse(description, width, height, model, seed);
         }
     }
 

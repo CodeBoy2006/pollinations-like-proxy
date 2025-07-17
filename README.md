@@ -15,7 +15,7 @@
 | ----------------------- | --------------------------------------------------------------------------- |
 | **Multi-Backend Support** | Weighted load balancing across any number of OpenAI-compatible endpoints with per-backend token support.    |
 | **Smart Retry Logic** | Configurable retry attempts for blocked content across different backends. |
-| **Fallback Integration** | Automatic fallback to Pollinations.ai when all backends fail or block content. |
+| **Transparent Fallback** | Seamless fallback to Pollinations.ai with local caching - no redirects, images served directly. |
 | **Base64 & URL Support** | Handles both Base64 image data and URL responses from backends automatically. |
 | **Model Mapping** | Map model names per backend for seamless compatibility across different providers. |
 | **Dual Cache Strategy** | Uses **Deno KV** for serverless (Deno Deploy) or **Local Filesystem** for self-hosting. |
@@ -126,12 +126,33 @@ The first call generates the image and populates the cache. Subsequent identical
 
 ---
 
+## 🔄 Transparent Fallback Mechanism
+
+When all configured backends fail or block content, the proxy seamlessly falls back to Pollinations.ai:
+
+1. **Direct Download**: Images are downloaded directly from Pollinations.ai (not redirected)
+2. **Local Caching**: Downloaded images are cached using the same system as backend images
+3. **Transparent Serving**: Users receive image data directly without knowing about the fallback
+4. **Performance Optimization**: Eliminates redirect steps and enables local caching for future requests
+
+**Fallback URL Format:**
+```
+https://image.pollinations.ai/prompt/{description}?model=flux-pro&nofeed=true&width={width}&height={height}
+```
+
+**Cache Integration:**
+- Fallback images use the same cache hash as regular backend requests
+- Supports both file system cache and KV cache with image hosting
+- Cached fallback images are served instantly on subsequent requests
+
+---
+
 ## 📝 Notes
 
 -   **Backend Support**: The proxy automatically handles both Base64 image data and URL responses from backends.
 -   **Smart Retry Logic**: Configure `BLOCKED_RETRY_ATTEMPTS` to control how many backends to try when content is blocked (default: 2).
--   **Automatic Fallback**: When all backends fail or block content, the proxy automatically falls back to Pollinations.ai.
--   **Content Moderation**: Blocked prompts are cached to prevent repeated processing. Cached blocked content triggers fallback.
+-   **Transparent Fallback**: When all backends fail or block content, the proxy downloads images from Pollinations.ai, caches them locally, and serves them directly (no redirects). This provides seamless user experience while improving performance through local caching.
+-   **Content Moderation**: Blocked prompts are cached to prevent repeated processing. Cached blocked content automatically triggers the transparent fallback mechanism.
 -   **Load Balancing**: Use `BACKEND_WEIGHTS` to control traffic distribution across backends (higher weight = more requests).
 -   **Model Mapping**: Use `MODEL_MAP` to translate model names per backend for compatibility across different providers.
 -   **Authentication**: `TOKEN_MAP` allows per-backend tokens, with `AUTH_TOKEN` as a global fallback.
