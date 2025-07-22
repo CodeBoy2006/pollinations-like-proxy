@@ -2,7 +2,7 @@
 
 [中文版](./README-zh.md)
 
-*An ultra-lightweight proxy that turns text prompts into images via multiple AI back-ends, with smart caching, LLM prompt optimization, and optional cloud hosting.*
+*An ultra-lightweight proxy that turns text prompts into images via multiple AI back-ends, with smart caching, LLM prompt optimization, content safety rewriting, and optional cloud hosting.*
 
 [![Deno](https://img.shields.io/badge/Deno-000000?style=for-the-badge&logo=deno&logoColor=white)](https://deno.land/)
 [![OpenAI](https://img.shields.io/badge/OpenAI-Compatible-00A67E?style=for-the-badge&logo=openai&logoColor=white)](https://openai.com/)
@@ -13,14 +13,15 @@
 
 | Feature | Description |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| **LLM Prompt Optimization** | (Optional) Automatically enhances user prompts via an external LLM for superior image quality, with template file support and content parsing. |
+| **LLM Prompt Optimization** | (Optional) Automatically enhances user prompts via an external LLM for superior image quality. |
+| **De-NSFW Content Recovery** | (Optional) When a prompt is blocked, automatically rewrites it for safety and retries generation before using the final fallback. |
 | **Multi-Backend Support** | Weighted load balancing across any number of OpenAI-compatible endpoints with per-backend token support. |
 | **Smart Retry Logic** | Configurable retry attempts for blocked content across different backends. |
-| **Transparent Fallback** | Seamless fallback to Pollinations.ai with local caching - no redirects, images served directly. |
+| **Multi-Stage Fallback** | Seamlessly retries with a safety-rewritten prompt, and finally falls back to Pollinations.ai if all else fails. |
 | **Base64 & URL Support** | Handles both Base64 image data and URL responses from backends automatically. |
 | **Model Mapping** | Map model names per backend for seamless compatibility across different providers. |
 | **Dual Cache Strategy** | Uses **Local Filesystem** (default) or **Deno KV** (when image hosting is enabled). |
-| **Content Moderation** | Automatically caches and handles blocked content to prevent repeated processing. |
+| **Content Moderation** | Caches blocked content to trigger the recovery/fallback mechanism instantly on subsequent requests. |
 | **Pluggable Image Hosting** | Built-in support for `smms`, `picgo`, and `cloudflare_imgbed`. |
 | **Reproducible Results** | Full control over `seed` (default `42`), `model`, `width`, and `height`. |
 | **Secure by Default** | Requires `?key=` for user access and `X-Admin-Token` for admin operations. |
@@ -30,7 +31,7 @@
 
 ## 🚀 Quick Start
 
-1.  Create a `.env` file in the project root with your configuration. You can also create a `prompt-template.txt` file to define your optimization template.
+1.  Create a `.env` file in the project root with your configuration. You can also create template files like `prompt-template.txt` and `safe-prompt-template.txt`.
 
     ```env
     # .env configuration example
@@ -67,6 +68,12 @@
     LLM_OPTIMIZATION_MODEL="gpt-4o"
     # Use a file for the template (highest priority)
     LLM_OPTIMIZATION_TEMPLATE_FILE=./prompt-template.txt
+    
+    # --- De-NSFW Content Safety Rewriting (Optional) ---
+    DE_NSFW_ENABLED=true
+    # Uses the same LLM API settings as optimization
+    # Use a file for the safety rewriting template (highest priority)
+    DE_NSFW_TEMPLATE_FILE=./safe-prompt-template.txt
     ```
 
 2.  Run the server.
@@ -82,7 +89,7 @@
 
 ## 🔧 Configuration
 
-Configure the proxy by creating a `.env` file in the project root or by setting environment variables. Settings from the `.env` file are loaded automatically.
+Configure the proxy by creating a `.env` file in the project root or by setting environment variables.
 
 | Variable | Required | Description / Example |
 | -------------------------------- | --------------------- | ------------------------------------------------------------------------------------------- |
@@ -101,14 +108,18 @@ Configure the proxy by creating a `.env` file in the project root or by setting 
 | `IMAGE_HOSTING_PROVIDER` | If hosting is enabled | `smms` \| `picgo` \| `cloudflare_imgbed` |
 | `IMAGE_HOSTING_KEY` | (Provider dependent) | API key for `smms` or `picgo`. |
 | `IMAGE_HOSTING_URL` | (Provider dependent) | Upload endpoint for `picgo` or `cloudflare_imgbed`. |
-| `IMAGE_HOSTING_AUTH_CODE` | (Provider dependent) | Optional auth code for `cloudflare_imgbed`. |
+| `IMAGE_HOSTING_AUTH_CODE`| (Provider dependent) | Optional auth code for `cloudflare_imgbed`. |
 | **LLM Prompt Optimization** | | |
 | `LLM_OPTIMIZATION_ENABLED` | - | `true` to enable prompt optimization. |
 | `LLM_OPTIMIZATION_API_URL` | If optimization enabled | OpenAI-compatible API endpoint for optimization. |
 | `LLM_OPTIMIZATION_TOKEN` | (Provider dependent) | Bearer token for the LLM API. |
-| `LLM_OPTIMIZATION_MODEL` | - | Model name to use for optimization. Defaults to `gpt-3.5-turbo`. |
+| `LLM_OPTIMIZATION_MODEL` | - | Model name to use for optimization. Defaults to `gpt-4.1-mini`. |
 | `LLM_OPTIMIZATION_TEMPLATE_FILE` | - | Path to a file containing the prompt template. **Highest priority**. |
-| `LLM_OPTIMIZATION_TEMPLATE` | - | A multi-line prompt template string (used if no file is provided). Use `\n` for newlines in a .env. |
+| `LLM_OPTIMIZATION_TEMPLATE` | - | A multi-line prompt template string. Use `\n` for newlines in a .env. |
+| **Content Safety Rewriting** | | |
+| `DE_NSFW_ENABLED` | - | `true` to enable safety rewriting for blocked prompts. |
+| `DE_NSFW_TEMPLATE_FILE` | - | Path to a file containing the safety rewriting template. **Highest priority**. |
+| `DE_NSFW_TEMPLATE` | - | A multi-line template string for safety rewriting. |
 
 ---
 
@@ -129,41 +140,37 @@ Configure the proxy by creating a `.env` file in the project root or by setting 
 curl "http://localhost:8080/prompt/a red apple?key=a-very-secret-user-key&width=1024&height=1024&seed=7&model=dall-e-3"
 ```
 
-If LLM optimization is enabled, "a red apple" will first be sent to the LLM service for enhancement before the image is generated. The first call generates the image and populates the cache. Subsequent identical calls will return the cached result instantly.
+If LLM optimization is enabled, "a red apple" will first be sent to the LLM service for enhancement. If the backend blocks the enhanced prompt, and safety rewriting is enabled, the prompt will be rewritten again to be safer and retried. The first successful call generates the image and populates the cache.
 
 ---
 
-## 🔄 Transparent Fallback Mechanism
+## 🧠 Multi-Stage Recovery & Fallback Mechanism
 
-When all configured backends fail or block content, the proxy seamlessly falls back to Pollinations.ai:
+The proxy employs a robust, multi-stage process to maximize the success rate of image generation:
 
-1.  **Direct Download**: Images are downloaded directly from Pollinations.ai (not redirected).
-2.  **Local Caching**: Downloaded images are cached using the same system as backend images.
-3.  **Transparent Serving**: Users receive image data directly without knowing about the fallback.
-4.  **Performance Optimization**: Eliminates redirect steps and enables local caching for future requests.
-5.  **Enhanced Prompts**: The fallback now uses the LLM-optimized prompt (if enabled), aiming for better results even from the fallback provider.
+1.  **Prompt Optimization**: If enabled, the initial user prompt is enhanced for quality.
+2.  **Initial Generation Attempt**: The proxy attempts to generate the image using the weighted pool of backend providers.
+3.  **Content Safety Rewrite**: If a backend blocks the prompt, and `DE_NSFW_ENABLED=true`, the proxy triggers an intelligent rewrite using a dedicated safety template to remove potentially problematic content.
+4.  **Retry Generation**: The new, safer prompt is used to retry image generation across the backend pool.
+5.  **Final Fallback**: If all above steps fail, the proxy seamlessly falls back to Pollinations.ai, using the most promising prompt (optimized or rewritten) to make a final attempt.
+    -   Images are downloaded directly and served to the user, not redirected.
+    -   The result is cached locally, just like any other successful generation.
 
-**Fallback URL Format:**
-```
-https://image.pollinations.ai/prompt/{optimized_description}?model=flux-pro&nofeed=true&width={width}&height={height}
-```
+This tiered approach significantly increases the likelihood of a successful image generation, even for prompts that might trigger content filters.
 
 ---
 
 ## 📝 Notes
 
--   **LLM Prompt Optimization**:
-    -   When enabled, the original prompt is sent to the configured LLM API to be enhanced based on a template.
-    -   The system automatically parses the response, prioritizing text within `<prompt>` tags, otherwise cleaning and using the full response.
-    -   If the optimization process fails or returns empty content, the system safely falls back to using the original prompt.
-    -   The cache key is still generated from the **original prompt**, but the **optimized prompt** is cached along with the result to be reused on subsequent requests, avoiding repeat optimizations.
+-   **Prompt Optimization vs. Safety Rewriting**:
+    -   **Optimization** happens *before* the first generation attempt and aims to improve image *quality*.
+    -   **Safety Rewriting** happens *after* a generation attempt is blocked and aims to ensure *compliance* with content policies.
+    -   Both features use the same configured LLM API but with different templates.
+-   **Cache Key Logic**: The cache key is always generated from the **original user prompt** and parameters. The system caches the final successful prompt (optimized or rewritten) along with the image to ensure reproducibility and avoid repeated processing.
 -   **Backend Support**: The proxy automatically handles both Base64 image data and URL responses from backends.
--   **Smart Retry Logic**: Configure `BLOCKED_RETRY_ATTEMPTS` to control how many backends to try when content is blocked (default: 2).
--   **Content Moderation**: Blocked prompts are cached to prevent repeated processing. Cached blocked content automatically triggers the transparent fallback mechanism.
 -   **Load Balancing**: Use `BACKEND_WEIGHTS` to control traffic distribution across backends (higher weight = more requests).
--   **Model Mapping**: Use `MODEL_MAP` to translate model names per backend for compatibility across different providers.
 -   **Authentication**: `TOKEN_MAP` allows per-backend tokens, with `AUTH_TOKEN` as a global fallback.
--   If `IMAGE_HOSTING_ENABLED=false` (the default), the proxy writes image binaries to the local `CACHE_DIR`. This is the standard self-hosted caching mode.
+-   **Cache Storage**: If `IMAGE_HOSTING_ENABLED=false` (the default), the proxy writes image binaries to the local `CACHE_DIR`. When enabled, it uses Deno KV.
 -   The cache key is a SHA-256 hash of the combined request parameters: `prompt|width|height|model|seed`. Changing any parameter results in a new image.
 
 ---
