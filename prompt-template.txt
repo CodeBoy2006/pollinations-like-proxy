@@ -8,9 +8,9 @@ Given the user-provided `ORIGINAL_PROMPT`, you will:
 - Clearly handle proper names.
 - Explicitly define spatial relationships.
 - Reasonably infer additional compositional and atmospheric details.
-- Faithfully incorporate and, when appropriate, enhance specified artistic styles.
+- Faithfully incorporate and, when appropriate, enhance specified artistic styles, placing them strategically within the prompt for maximum effect.
 
-Finally, explicitly articulate your concise reasoning steps, followed by the complete, optimized prompt clearly enclosed within `<prompt>` and `</prompt>` tags.
+Finally, you will articulate your concise reasoning steps. The response **must** conclude with the complete, optimized prompt, which **must** be strictly and exclusively enclosed within `<prompt>` and `</prompt>` tags.
 
 # Task Steps (Reasoning Process)
 1.  **Handle Named People**:
@@ -31,23 +31,26 @@ Finally, explicitly articulate your concise reasoning steps, followed by the com
     -   Logically infer lighting, weather, atmospheric details, viewpoint, or composition to enhance visual depth.
 
 6.  **Incorporate and Enhance Style Directives**:
-    -   Identify and retain the core stylistic instruction from the original prompt (e.g., 'realistic', 'manga style').
-    -   When necessary, expand upon the core style by adding a few compatible, descriptive keywords to emphasize the aesthetic. For instance, 'manga style' can be enhanced with 'bold ink lines, screentone shading'; 'realistic' can be enhanced with 'photorealistic detail, natural lighting'.
-    -   Append these final style directives to the prompt.
+    -   Identify and enhance the core style (e.g., 'realistic', 'manga style').
+    -   **Decide on the most effective placement for the style directive(s) based on its function:**
+        -   **Prepend:** For broad, medium-defining styles that affect the entire image (e.g., `Oil painting of...`, `3D render of...`). This sets the overall context first.
+        -   **Integrate:** For styles that are intrinsic to the subject's description (e.g., `A technical line drawing of...`, `A stained-glass window depicting...`). This feels more natural and descriptive.
+        -   **Append:** For supplementary stylistic details, lighting, camera specifications, or rendering quality (e.g., `...dynamic lighting, vivid colors, 4k, photorealistic`).
 
 # Constraints
 - Do not introduce unrelated core elements or substantially alter the original intent.
 - Style enhancements must be direct, logical extensions of the user's specified style, not new or conflicting concepts.
 - Continue to avoid adding artist names or subjective quality indicators like 'masterpiece' unless explicitly provided in the original prompt.
 - Provide reasoning concisely (briefly summarized in each step).
-- Output English only, without additional formatting except the explicitly required `<prompt>` tags.
+- Output English only.
+- **The final, optimized prompt must be the very last part of your response and must be enclosed in `<prompt>` and `</prompt>` tags. This is a mandatory and strict formatting rule.**
 
 # Response Format
-Clearly present each reasoning step briefly. Conclude with the final optimized prompt enclosed within `<prompt>` and `</prompt>` tags.
+First, present each reasoning step briefly. Then, conclude with the final optimized prompt. **Crucially, the final optimized prompt must be placed inside `<prompt>` and `</prompt>` tags. No text, explanation, or punctuation should follow the closing `</prompt>` tag.**
 
 # Examples and Guidance
 
-**Example 1:**
+**Example 1: Prepend Strategy**
 `ORIGINAL_PROMPT`: `A cat warrior, manga style.`
 
 Reasoning Steps:
@@ -55,13 +58,13 @@ Reasoning Steps:
 - Vague term "cat warrior" clarified as "A bipedal cat wearing ornate samurai armor."
 - Added specific action: "clutching the hilt of a katana."
 - Inferred scene detail: "standing on a moonlit rooftop with city lights in the distance."
-- Style Directive: "manga style" from the original prompt is retained and enhanced with associated visual descriptors "bold black and white line art, dynamic action lines" to better capture the aesthetic.
+- Style Directive: "manga style" is an overarching aesthetic. It is enhanced with "bold black and white line art, dynamic action lines" and **prepended** to define the entire medium.
 
 <prompt>
-A bipedal cat wearing ornate samurai armor, clutching the hilt of a katana, standing on a moonlit rooftop with city lights in the distance, manga style, bold black and white line art, dynamic action lines
+manga style, bold black and white line art, dynamic action lines, a bipedal cat wearing ornate samurai armor, clutching the hilt of a katana, standing on a moonlit rooftop with city lights in the distance
 </prompt>
 
-**Example 2:**  
+**Example 2: Append Strategy**  
 `ORIGINAL_PROMPT`: `Albert Einstein looking sad in a room. Realistic.`  
 
 Reasoning Steps:
@@ -70,12 +73,32 @@ Reasoning Steps:
 - Room description minimally inferred as "sparsely furnished."
 - Inferred atmospheric detail: "soft shadows cast by dim overhead lighting."
 - Added concise compositional cue: "viewed from front at mid-range."
-- Style Directive: "Realistic" from the original prompt is retained and enhanced with associated visual descriptors "photorealistic detail, natural lighting, Leica SL2-S, f/1.8, Medium Shot(MS), hdr 4k, 8k" to better capture the aesthetic.
+- Style Directive: "Realistic" is enhanced with specific photographic terms. These technical details are **appended** to refine the core scene description.
 
 <prompt>
 Albert Einstein seated in a sparsely furnished room, head bowed, eyes downcast, dim overhead lighting casting soft shadows, viewed from front at mid-range, realistic, photorealistic detail, natural lighting, Leica SL2-S, f/1.8, Medium Shot(MS), hdr 4k, 8k
 </prompt>
 
+**Example 3: Integrate Strategy**
+`ORIGINAL_PROMPT`: `A sketch of a treehouse.`
+
+Reasoning Steps:
+- Named Person: N/A.
+- Vague term "treehouse" expanded to "a whimsical, multi-level treehouse built into a massive, ancient oak."
+- Added scene details: "rope ladder hanging down," "sunlight filtering through leaves."
+- Style Directive: The style "sketch" is intrinsic to the subject. It's enhanced to "A detailed architectural sketch" and **integrated** directly into the start of the sentence for a natural description. The medium "graphite on textured paper" is appended.
+
+<prompt>
+A detailed architectural sketch of a whimsical, multi-level treehouse built into a massive, ancient oak tree, a rope ladder hangs down from the main platform, soft sunlight filtering through the leaves, graphite on textured paper
+</prompt>
+
 ---
 
-Now, start processing the ORIGINAL_PROMPT: {ORIGINAL_PROMPT}
+Now, start processing the ORIGINAL_PROMPT; the final optimized prompt must be placed inside `<prompt>` and `</prompt>` tags.
+
+
+ORIGINAL_PROMPT:
+
+```
+{ORIGINAL_PROMPT}
+```

@@ -25,7 +25,7 @@ const args = parse(Deno.args, {
     "llm-optimization-token",
     "llm-optimization-model",
     "llm-optimization-template",
-    "llm-optimization-template-file", // NEW
+    "llm-optimization-template-file",
   ],
   boolean: ["image-hosting-enabled", "llm-optimization-enabled"],
   default: {
@@ -34,7 +34,6 @@ const args = parse(Deno.args, {
     "image-hosting-enabled": false,
     "blocked-retry-attempts": "2",
     "llm-optimization-enabled": false,
-    "llm-optimization-model": "gpt-3.5-turbo",
   },
 });
 
@@ -57,9 +56,9 @@ const IMAGE_HOSTING_AUTH_CODE = args["image-hosting-auth-code"] || Deno.env.get(
 const LLM_OPTIMIZATION_ENABLED = args["llm-optimization-enabled"] || (Deno.env.get("LLM_OPTIMIZATION_ENABLED") === "true");
 const LLM_OPTIMIZATION_API_URL = args["llm-optimization-api-url"] || Deno.env.get("LLM_OPTIMIZATION_API_URL");
 const LLM_OPTIMIZATION_TOKEN = args["llm-optimization-token"] || Deno.env.get("LLM_OPTIMIZATION_TOKEN");
-const LLM_OPTIMIZATION_MODEL = args["llm-optimization-model"] || Deno.env.get("LLM_OPTIMIZATION_MODEL") || "gpt-3.5-turbo";
+const LLM_OPTIMIZATION_MODEL = args["llm-optimization-model"] || Deno.env.get("LLM_OPTIMIZATION_MODEL") || "gpt-4.1-mini";
 
-// --- NEW: TEMPLATE INITIALIZATION LOGIC ---
+// --- TEMPLATE INITIALIZATION LOGIC ---
 async function initializeLlmTemplate(): Promise<string> {
   const templateFilePath = args["llm-optimization-template-file"] || Deno.env.get("LLM_OPTIMIZATION_TEMPLATE_FILE");
 
@@ -168,8 +167,100 @@ async function generateCacheHash(description: string, width?: number, height?: n
 function base64ToUint8Array(base64: string): Uint8Array { const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, ''); const binaryString = atob(cleanBase64); const bytes = new Uint8Array(binaryString.length); for (let i = 0; i < binaryString.length; i++) { bytes[i] = binaryString.charCodeAt(i); } return bytes; }
 function detectContentTypeFromBase64(base64: string): string { const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, ''); if (cleanBase64.startsWith('iVBORw0KGgo')) return 'image/png'; if (cleanBase64.startsWith('/9j/')) return 'image/jpeg'; if (cleanBase64.startsWith('R0lGODlh') || cleanBase64.startsWith('R0lGODdh')) return 'image/gif'; if (cleanBase64.includes('UklGR') && cleanBase64.includes('V0VCUw')) return 'image/webp'; return 'image/png'; }
 
-// --- LLM PROMPT OPTIMIZATION ---
+// --- ENHANCED LLM PROMPT OPTIMIZATION ---
 const promptOptimizationCache = new Map<string, string>();
+
+/**
+ * Enhanced prompt parsing with multiple fallback strategies
+ * @param rawContent The raw response content from LLM
+ * @returns Parsed prompt or null if extraction fails
+ */
+function parseOptimizedPrompt(rawContent: string): string | null {
+    if (!rawContent?.trim()) {
+        console.log("[LLM_OPT] Raw content is empty or null");
+        return null;
+    }
+
+    console.log("[LLM_OPT] Raw LLM response content:");
+    console.log("=====================================");
+    console.log(rawContent);
+    console.log("=====================================");
+
+    // Strategy 1: Look for <prompt>...</prompt> tags (exact match)
+    const exactTagMatch = rawContent.match(/<prompt\s*>([\s\S]*?)<\/prompt\s*>/i);
+    if (exactTagMatch && exactTagMatch[1]?.trim()) {
+        const extracted = exactTagMatch[1].trim();
+        console.log("[LLM_OPT] Strategy 1: Found exact <prompt> tags");
+        console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
+        return extracted;
+    }
+
+    // Strategy 2: Look for <prompt> opening tag and extract everything after it
+    const openTagMatch = rawContent.match(/<prompt\s*>\s*([\s\S]*)/i);
+    if (openTagMatch && openTagMatch[1]?.trim()) {
+        let extracted = openTagMatch[1].trim();
+        
+        // Remove closing tag if it exists
+        extracted = extracted.replace(/<\/prompt\s*>[\s\S]*$/i, '').trim();
+        
+        if (extracted) {
+            console.log("[LLM_OPT] Strategy 2: Found <prompt> opening tag, extracted content after it");
+            console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
+            return extracted;
+        }
+    }
+
+    // Strategy 3: Look for common prompt indicators and extract content after them
+    const promptIndicators = [
+        /enhanced\s*prompt\s*:?\s*\n?([\s\S]*)/i,
+        /optimized\s*prompt\s*:?\s*\n?([\s\S]*)/i,
+        /improved\s*prompt\s*:?\s*\n?([\s\S]*)/i,
+        /final\s*prompt\s*:?\s*\n?([\s\S]*)/i,
+        /result\s*:?\s*\n?([\s\S]*)/i,
+        /here['']?s\s+the\s+enhanced\s+prompt\s*:?\s*\n?([\s\S]*)/i,
+        /the\s+enhanced\s+prompt\s+is\s*:?\s*\n?([\s\S]*)/i
+    ];
+
+    for (const indicator of promptIndicators) {
+        const match = rawContent.match(indicator);
+        if (match && match[1]?.trim()) {
+            let extracted = match[1].trim();
+            
+            // Clean up common artifacts
+            extracted = extracted
+                .replace(/^```[a-z]*\n?/, "") // Remove starting code blocks
+                .replace(/\n?```$/, "")       // Remove ending code blocks
+                .replace(/^['"]|['"]$/g, "")  // Remove surrounding quotes
+                .replace(/^\*\*|\*\*$/g, "")  // Remove bold markdown
+                .trim();
+            
+            if (extracted) {
+                console.log(`[LLM_OPT] Strategy 3: Found prompt indicator pattern`);
+                console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
+                return extracted;
+            }
+        }
+    }
+
+    // Strategy 4: Clean the full response and use as fallback
+    let cleanedContent = rawContent
+        .replace(/^```[a-z]*\n?/, "") // Remove starting code blocks
+        .replace(/\n?```$/, "")       // Remove ending code blocks
+        .replace(/^['"]|['"]$/g, "")  // Remove surrounding quotes
+        .replace(/^\*\*|\*\*$/g, "")  // Remove bold markdown
+        .replace(/^Here'?s?\s+(the\s+)?(enhanced|optimized|improved)\s+prompt:?\s*/i, "") // Remove common prefixes
+        .replace(/^(Enhanced|Optimized|Improved)\s+prompt:?\s*/i, "")
+        .trim();
+
+    if (cleanedContent && cleanedContent.length > 10) { // Reasonable length check
+        console.log("[LLM_OPT] Strategy 4: Using cleaned full response as fallback");
+        console.log(`[LLM_OPT] Cleaned content: "${cleanedContent.substring(0, 100)}..."`);
+        return cleanedContent;
+    }
+
+    console.log("[LLM_OPT] All parsing strategies failed - no valid prompt found");
+    return null;
+}
 
 async function optimizePrompt(originalPrompt: string): Promise<string> {
     if (!LLM_OPTIMIZATION_ENABLED) {
@@ -201,7 +292,7 @@ async function optimizePrompt(originalPrompt: string): Promise<string> {
             headers["Authorization"] = `Bearer ${LLM_OPTIMIZATION_TOKEN}`;
         }
 
-        console.log(`[LLM_OPT] Optimizing prompt: "${originalPrompt.substring(0, 50)}..."`);
+        console.log(`[LLM_OPT] Optimizing prompt:\n${originalPrompt}`);
         const response = await fetch(`${LLM_OPTIMIZATION_API_URL}/v1/chat/completions`, {
             method: "POST",
             headers,
@@ -209,49 +300,62 @@ async function optimizePrompt(originalPrompt: string): Promise<string> {
         });
 
         if (!response.ok) {
-            console.error(`[LLM_OPT] API request failed: ${response.status} ${response.statusText}. Falling back to original prompt.`);
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error(`[LLM_OPT] API request failed: ${response.status} ${response.statusText}. Error: ${errorText}. Falling back to original prompt.`);
             return originalPrompt;
         }
 
         const data = await response.json();
-        const rawContent = data.choices?.[0]?.message?.content?.trim();
+        const rawContent = data.choices?.[0]?.message?.content;
 
         if (!rawContent) {
-            console.error(`[LLM_OPT] No content in API response. Falling back to original prompt.`);
+            console.error(`[LLM_OPT] No content in API response. Full response: ${JSON.stringify(data)}. Falling back to original prompt.`);
             return originalPrompt;
         }
 
-        let optimizedPrompt: string;
-        const tagMatch = rawContent.match(/<prompt>([\s\S]*?)<\/prompt>/);
-
-        if (tagMatch && tagMatch[1]) {
-            console.log("[LLM_OPT] Found <prompt> tag, extracting content.");
-            optimizedPrompt = tagMatch[1].trim();
-        } else {
-            console.log("[LLM_OPT] No <prompt> tag found, using full response and cleaning it.");
-            optimizedPrompt = rawContent
-                .replace(/^```[a-z]*\n?/, "") // Remove starting backticks and optional language hint
-                .replace(/\n?```$/, "")       // Remove ending backticks
-                .replace(/^['"]|['"]$/g, "")  // Remove surrounding single/double quotes
-                .trim();
-        }
+        const optimizedPrompt = parseOptimizedPrompt(rawContent);
 
         if (!optimizedPrompt) {
-            console.warn("[LLM_OPT] Optimization resulted in an empty prompt. Falling back to original.");
+            console.warn("[LLM_OPT] Failed to parse optimized prompt from LLM response. Falling back to original.");
             return originalPrompt;
         }
 
+        // Additional validation
+        if (optimizedPrompt.length < 5) {
+            console.warn(`[LLM_OPT] Optimized prompt too short (${optimizedPrompt.length} chars). Falling back to original.`);
+            return originalPrompt;
+        }
+
+        if (optimizedPrompt.length > 2000) {
+            console.warn(`[LLM_OPT] Optimized prompt too long (${optimizedPrompt.length} chars). Truncating to 2000 chars.`);
+            const truncated = optimizedPrompt.substring(0, 2000).trim();
+            // Try to end at a complete sentence
+            const lastPeriod = truncated.lastIndexOf('.');
+            const finalPrompt = lastPeriod > 1500 ? truncated.substring(0, lastPeriod + 1) : truncated;
+            
+            // Cache and return
+            if (promptOptimizationCache.size >= 1000) {
+                const firstKey = promptOptimizationCache.keys().next().value;
+                promptOptimizationCache.delete(firstKey);
+            }
+            promptOptimizationCache.set(cacheKey, finalPrompt);
+            
+            console.log(`[LLM_OPT] Optimization successful (truncated).\n--- Original ---\n${originalPrompt}\n--- Optimized ---\n${finalPrompt}\n-----------------`);
+            return finalPrompt;
+        }
+
+        // Cache the result
         if (promptOptimizationCache.size >= 1000) {
             const firstKey = promptOptimizationCache.keys().next().value;
             promptOptimizationCache.delete(firstKey);
         }
         promptOptimizationCache.set(cacheKey, optimizedPrompt);
 
-        console.log(`[LLM_OPT] Optimization successful. Original: "${originalPrompt.substring(0, 50)}..." -> Optimized: "${optimizedPrompt.substring(0, 50)}..."`);
+        console.log(`[LLM_OPT] Optimization successful.\n--- Original ---\n${originalPrompt}\n--- Optimized ---\n${optimizedPrompt}\n-----------------`);
         return optimizedPrompt;
 
     } catch (error) {
-        console.error(`[LLM_OPT] Error during optimization: ${error.message}. Falling back to original prompt.`);
+        console.error(`[LLM_OPT] Error during optimization: ${error.message}. Stack: ${error.stack}. Falling back to original prompt.`);
         return originalPrompt;
     }
 }
@@ -346,7 +450,7 @@ async function generateImageFromBackend(description: string, optimizedDescriptio
         if (width && height) payload.size = `${width}x${height}`;
         
         console.log(`[BACKEND] Attempt #${i + 1}: Request to ${backendUrl} (Model: ${effectiveModel || 'default'})`);
-        console.log(`[BACKEND] Using prompt: "${optimizedDescription.substring(0, 100)}..."`);
+        console.log(`[BACKEND] Using prompt:\n${optimizedDescription}`);
         
         try {
             const headers: HeadersInit = { "Content-Type": "application/json", "Accept": "application/json" };
