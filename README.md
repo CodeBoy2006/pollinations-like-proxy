@@ -120,6 +120,7 @@ Configure the proxy by creating a `.env` file in the project root or by setting 
 | `DE_NSFW_ENABLED` | - | `true` to enable safety rewriting for blocked prompts. |
 | `DE_NSFW_TEMPLATE_FILE` | - | Path to a file containing the safety rewriting template. **Highest priority**. |
 | `DE_NSFW_TEMPLATE` | - | A multi-line template string for safety rewriting. |
+| `DE_NSFW_MAX_ATTEMPTS` | - | Number of safety rewriting to try when content is blocked. Defaults to `2`. |
 
 ---
 

@@ -120,6 +120,7 @@
 | `DE_NSFW_ENABLED` | - | 设置为 `true` 以启用对被阻止提示词的安全重写。 |
 | `DE_NSFW_TEMPLATE_FILE` | - | 包含安全重写模板的文件路径。**优先级最高**。 |
 | `DE_NSFW_TEMPLATE` | - | 用于安全重写的多行模板字符串。 |
+| `DE_NSFW_MAX_ATTEMPTS` | - | 安全重写的最大次数。默认为 `2`。 |
 
 ---
 
