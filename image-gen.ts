@@ -66,77 +66,26 @@ const DE_NSFW_ENABLED = args["de-nsfw-enabled"] || (Deno.env.get("DE_NSFW_ENABLE
 // --- TEMPLATE INITIALIZATION LOGIC ---
 async function initializeLlmTemplate(): Promise<string> {
   const templateFilePath = args["llm-optimization-template-file"] || Deno.env.get("LLM_OPTIMIZATION_TEMPLATE_FILE");
-
-  // Priority 1: From file
   if (templateFilePath) {
-    try {
-      console.log(`[INIT] Loading LLM template from file: ${templateFilePath}`);
-      return await Deno.readTextFile(templateFilePath);
-    } catch (e) {
-      console.error(`FATAL: Failed to read LLM template file at '${templateFilePath}': ${e.message}`);
-      Deno.exit(1);
-    }
+    try { console.log(`[INIT] Loading LLM template from file: ${templateFilePath}`); return await Deno.readTextFile(templateFilePath); }
+    catch (e) { console.error(`FATAL: Failed to read LLM template file at '${templateFilePath}': ${e.message}`); Deno.exit(1); }
   }
-
-  // Priority 2: From inline argument or environment variable
   const inlineTemplate = args["llm-optimization-template"] || Deno.env.get("LLM_OPTIMIZATION_TEMPLATE");
-  if (inlineTemplate) {
-    console.log("[INIT] Loading LLM template from inline argument or environment variable.");
-    return inlineTemplate.replace(/\\n/g, '\n');
-  }
-
-  // Priority 3: Default template
+  if (inlineTemplate) { console.log("[INIT] Loading LLM template from inline argument or environment variable."); return inlineTemplate.replace(/\\n/g, '\n'); }
   console.log("[INIT] Using default LLM template.");
-  return `You are an expert AI art prompt engineer. Your task is to transform the user's input into a detailed, high-quality prompt for image generation.
-
-Guidelines:
-- Enhance artistic details, lighting, composition, and style
-- Add specific technical photography/art terms when appropriate
-- Maintain the core concept and intent of the original prompt
-- Keep the result under 200 words
-- Be creative but stay focused on the original idea
-
-Original prompt: {ORIGINAL_PROMPT}
-
-Enhanced prompt:`;
+  return `You are an expert AI art prompt engineer. Your task is to transform the user's input into a detailed, high-quality prompt for image generation.\n\nGuidelines:\n- Enhance artistic details, lighting, composition, and style\n- Add specific technical photography/art terms when appropriate\n- Maintain the core concept and intent of the original prompt\n- Keep the result under 200 words\n- Be creative but stay focused on the original idea\n\nOriginal prompt: {ORIGINAL_PROMPT}\n\nEnhanced prompt:`;
 }
 
 async function initializeDeNsfwTemplate(): Promise<string> {
   const templateFilePath = args["de-nsfw-template-file"] || Deno.env.get("DE_NSFW_TEMPLATE_FILE");
-
-  // Priority 1: From file
   if (templateFilePath) {
-    try {
-      console.log(`[INIT] Loading De-NSFW template from file: ${templateFilePath}`);
-      return await Deno.readTextFile(templateFilePath);
-    } catch (e) {
-      console.error(`FATAL: Failed to read De-NSFW template file at '${templateFilePath}': ${e.message}`);
-      Deno.exit(1);
-    }
+    try { console.log(`[INIT] Loading De-NSFW template from file: ${templateFilePath}`); return await Deno.readTextFile(templateFilePath); }
+    catch (e) { console.error(`FATAL: Failed to read De-NSFW template file at '${templateFilePath}': ${e.message}`); Deno.exit(1); }
   }
-
-  // Priority 2: From inline argument or environment variable
   const inlineTemplate = args["de-nsfw-template"] || Deno.env.get("DE_NSFW_TEMPLATE");
-  if (inlineTemplate) {
-    console.log("[INIT] Loading De-NSFW template from inline argument or environment variable.");
-    return inlineTemplate.replace(/\\n/g, '\n');
-  }
-
-  // Priority 3: Default template
+  if (inlineTemplate) { console.log("[INIT] Loading De-NSFW template from inline argument or environment variable."); return inlineTemplate.replace(/\\n/g, '\n'); }
   console.log("[INIT] Using default De-NSFW template.");
-  return `You are an AI content safety specialist. Your task is to rewrite an image generation prompt to remove any potentially unsafe, inappropriate, or NSFW (Not Safe For Work) content while preserving the core artistic intent.
-
-Guidelines:
-- Remove or replace any explicit, sexual, violent, or inappropriate content
-- Keep the artistic style, composition, and technical details
-- Maintain the overall creative vision but make it family-friendly
-- Use tasteful, appropriate alternatives for problematic terms
-- Keep the result under 200 words
-- Focus on the artistic and aesthetic aspects
-
-Original prompt: {ORIGINAL_PROMPT}
-
-Safe rewritten prompt:`;
+  return `You are an AI content safety specialist. Your task is to rewrite an image generation prompt to remove any potentially unsafe, inappropriate, or NSFW (Not Safe For Work) content while preserving the core artistic intent.\n\nGuidelines:\n- Remove or replace any explicit, sexual, violent, or inappropriate content\n- Keep the artistic style, composition, and technical details\n- Maintain the overall creative vision but make it family-friendly\n- Use tasteful, appropriate alternatives for problematic terms\n- Keep the result under 200 words\n- Focus on the artistic and aesthetic aspects\n\nOriginal prompt: {ORIGINAL_PROMPT}\n\nSafe rewritten prompt:`;
 }
 
 const LLM_OPTIMIZATION_TEMPLATE = await initializeLlmTemplate();
@@ -147,75 +96,15 @@ if (!BACKEND_API_URLS_RAW) { console.error("FATAL: Backend API URLs are not set 
 const BACKEND_API_URLS = BACKEND_API_URLS_RAW.split(",").map((url) => url.trim().replace(/\/$/, "")).filter(Boolean);
 if (BACKEND_API_URLS.length === 0) { console.error("FATAL: No valid backend API URLs found."); Deno.exit(1); }
 if (!PROXY_ACCESS_KEY) { console.error("FATAL: Proxy access key is not set via --proxy-key or PROXY_ACCESS_KEY."); Deno.exit(1); }
-
-if (LLM_OPTIMIZATION_ENABLED) {
-  if (!LLM_OPTIMIZATION_API_URL) {
-    console.error("FATAL: LLM optimization is enabled but API URL is not set via --llm-optimization-api-url or LLM_OPTIMIZATION_API_URL.");
-    Deno.exit(1);
-  }
-  if (!LLM_OPTIMIZATION_TOKEN) {
-    console.warn("WARNING: LLM optimization is enabled but no token is set. Requests may fail if the API requires authentication.");
-  }
-}
-
-if (DE_NSFW_ENABLED) {
-  if (!LLM_OPTIMIZATION_API_URL) {
-    console.error("FATAL: De-NSFW rewriting is enabled but LLM API URL is not set. It uses the same API as LLM optimization.");
-    Deno.exit(1);
-  }
-  if (!LLM_OPTIMIZATION_TOKEN) {
-    console.warn("WARNING: De-NSFW rewriting is enabled but no token is set. Requests may fail if the API requires authentication.");
-  }
-}
-
-let modelMap: Record<string, Record<string, string>> = {};
-if (MODEL_MAP_RAW) { try { modelMap = JSON.parse(MODEL_MAP_RAW); } catch (e) { console.error(`FATAL: Invalid JSON in --model-map or MODEL_MAP: ${e.message}`); Deno.exit(1); } }
-
-let tokenMap: Record<string, string> = {};
-if (TOKEN_MAP_RAW) { try { tokenMap = JSON.parse(TOKEN_MAP_RAW); } catch (e) { console.error(`FATAL: Invalid JSON in --token-map or TOKEN_MAP: ${e.message}`); Deno.exit(1); } }
-
-let weightedBackends: string[] = [];
-const backendWeights: Record<string, number> = {};
-function initializeBackends() {
-    const weights: Record<string, number> = {};
-    if (BACKEND_WEIGHTS_RAW) {
-        try { Object.assign(weights, JSON.parse(BACKEND_WEIGHTS_RAW)); }
-        catch (e) { console.error(`FATAL: Invalid JSON in --backend-weights or BACKEND_WEIGHTS: ${e.message}`); Deno.exit(1); }
-    }
-    weightedBackends = [];
-    for (const url of BACKEND_API_URLS) {
-        const weight = weights[url] ?? 1;
-        if (typeof weight !== 'number' || weight < 0) {
-            console.warn(`WARNING: Invalid weight for backend ${url}. Using default weight of 1.`);
-            backendWeights[url] = 1;
-        } else {
-            backendWeights[url] = weight;
-        }
-        for (let i = 0; i < backendWeights[url]; i++) {
-            weightedBackends.push(url);
-        }
-    }
-    if (weightedBackends.length === 0) {
-        console.warn("WARNING: No backends available after applying weights. Falling back to equal weighting.");
-        weightedBackends = [...BACKEND_API_URLS];
-        BACKEND_API_URLS.forEach(url => backendWeights[url] = 1);
-    }
-}
+if (LLM_OPTIMIZATION_ENABLED) { if (!LLM_OPTIMIZATION_API_URL) { console.error("FATAL: LLM optimization is enabled but API URL is not set via --llm-optimization-api-url or LLM_OPTIMIZATION_API_URL."); Deno.exit(1); } if (!LLM_OPTIMIZATION_TOKEN) { console.warn("WARNING: LLM optimization is enabled but no token is set. Requests may fail if the API requires authentication."); } }
+if (DE_NSFW_ENABLED) { if (!LLM_OPTIMIZATION_API_URL) { console.error("FATAL: De-NSFW rewriting is enabled but LLM API URL is not set. It uses the same API as LLM optimization."); Deno.exit(1); } if (!LLM_OPTIMIZATION_TOKEN) { console.warn("WARNING: De-NSFW rewriting is enabled but no token is set. Requests may fail if the API requires authentication."); } }
+let modelMap: Record<string, Record<string, string>> = {}; if (MODEL_MAP_RAW) { try { modelMap = JSON.parse(MODEL_MAP_RAW); } catch (e) { console.error(`FATAL: Invalid JSON in --model-map or MODEL_MAP: ${e.message}`); Deno.exit(1); } }
+let tokenMap: Record<string, string> = {}; if (TOKEN_MAP_RAW) { try { tokenMap = JSON.parse(TOKEN_MAP_RAW); } catch (e) { console.error(`FATAL: Invalid JSON in --token-map or TOKEN_MAP: ${e.message}`); Deno.exit(1); } }
+let weightedBackends: string[] = []; const backendWeights: Record<string, number> = {};
+function initializeBackends() { const weights: Record<string, number> = {}; if (BACKEND_WEIGHTS_RAW) { try { Object.assign(weights, JSON.parse(BACKEND_WEIGHTS_RAW)); } catch (e) { console.error(`FATAL: Invalid JSON in --backend-weights or BACKEND_WEIGHTS: ${e.message}`); Deno.exit(1); } } weightedBackends = []; for (const url of BACKEND_API_URLS) { const weight = weights[url] ?? 1; if (typeof weight !== 'number' || weight < 0) { console.warn(`WARNING: Invalid weight for backend ${url}. Using default weight of 1.`); backendWeights[url] = 1; } else { backendWeights[url] = weight; } for (let i = 0; i < backendWeights[url]; i++) { weightedBackends.push(url); } } if (weightedBackends.length === 0) { console.warn("WARNING: No backends available after applying weights. Falling back to equal weighting."); weightedBackends = [...BACKEND_API_URLS]; BACKEND_API_URLS.forEach(url => backendWeights[url] = 1); } }
 initializeBackends();
-
 if (IMAGE_HOSTING_ENABLED) { if (!IMAGE_HOSTING_PROVIDER) { console.error("FATAL: Image Hosting is enabled, but provider is not set."); Deno.exit(1); } switch(IMAGE_HOSTING_PROVIDER) { case 'smms': if (!IMAGE_HOSTING_KEY) { console.error("FATAL: SM.MS provider requires an API key."); Deno.exit(1); } break; case 'picgo': if (!IMAGE_HOSTING_KEY || !IMAGE_HOSTING_URL) { console.error("FATAL: PicGo provider requires an API key and URL."); Deno.exit(1); } break; case 'cloudflare_imgbed': if (!IMAGE_HOSTING_URL) { console.error("FATAL: Cloudflare Imgbed provider requires a URL."); Deno.exit(1); } break; default: console.error(`FATAL: Unknown image hosting provider '${IMAGE_HOSTING_PROVIDER}'.`); Deno.exit(1); } }
-
-console.log("--- Proxy Configuration ---");
-console.log(`Port: ${PORT}`);
-console.log(`Blocked Prompt Retry Limit: ${BLOCKED_RETRY_ATTEMPTS}`);
-console.log("Backends & Weights:");
-Object.entries(backendWeights).forEach(([url, weight]) => { const customTokenInfo = tokenMap[url] ? '(Custom Token)' : (AUTH_TOKEN ? '(Global Token)' : '(No Token)'); console.log(`  - ${url} (Weight: ${weight}) ${customTokenInfo}`); });
-if (Object.keys(modelMap).length > 0) { console.log("Model Mappings:"); console.log(JSON.stringify(modelMap, null, 2)); } else { console.log("Model Mappings: None"); }
-console.log(`Image Hosting: ${IMAGE_HOSTING_ENABLED ? `Enabled (Provider: ${IMAGE_HOSTING_PROVIDER})` : 'Disabled'}`);
-console.log(`Cache Mode: ${IMAGE_HOSTING_ENABLED ? 'Deno KV' : `File System (${CACHE_DIR})`}`);
-console.log(`LLM Optimization: ${LLM_OPTIMIZATION_ENABLED ? `Enabled (API: ${LLM_OPTIMIZATION_API_URL}, Model: ${LLM_OPTIMIZATION_MODEL})` : 'Disabled'}`);
-console.log(`De-NSFW Rewriting: ${DE_NSFW_ENABLED ? 'Enabled' : 'Disabled'}`);
-console.log("--------------------------");
+console.log("--- Proxy Configuration ---"); console.log(`Port: ${PORT}`); console.log(`Blocked Prompt Retry Limit: ${BLOCKED_RETRY_ATTEMPTS}`); console.log("Backends & Weights:"); Object.entries(backendWeights).forEach(([url, weight]) => { const customTokenInfo = tokenMap[url] ? '(Custom Token)' : (AUTH_TOKEN ? '(Global Token)' : '(No Token)'); console.log(`  - ${url} (Weight: ${weight}) ${customTokenInfo}`); }); if (Object.keys(modelMap).length > 0) { console.log("Model Mappings:"); console.log(JSON.stringify(modelMap, null, 2)); } else { console.log("Model Mappings: None"); } console.log(`Image Hosting: ${IMAGE_HOSTING_ENABLED ? `Enabled (Provider: ${IMAGE_HOSTING_PROVIDER})` : 'Disabled'}`); console.log(`Cache Mode: ${IMAGE_HOSTING_ENABLED ? 'Deno KV' : `File System (${CACHE_DIR})`}`); console.log(`LLM Optimization: ${LLM_OPTIMIZATION_ENABLED ? `Enabled (API: ${LLM_OPTIMIZATION_API_URL}, Model: ${LLM_OPTIMIZATION_MODEL})` : 'Disabled'}`); console.log(`De-NSFW Rewriting: ${DE_NSFW_ENABLED ? 'Enabled' : 'Disabled'}`); console.log("--------------------------");
 
 // --- UTILITY AND HELPER FUNCTIONS ---
 async function generateCacheHash(description: string, width?: number, height?: number, model?: string, seed?: number): Promise<string> { const keyString = `${description.toLowerCase().trim()}|${width || "def"}|${height || "def"}|${model || "def"}|${seed || "def"}`; const data = new TextEncoder().encode(keyString); const hashBuffer = await crypto.subtle.digest('SHA-256', data); const hashArray = Array.from(new Uint8Array(hashBuffer)); return hashArray.map(b => b.toString(16).padStart(2, '0')).join(''); }
@@ -223,228 +112,11 @@ function base64ToUint8Array(base64: string): Uint8Array { const cleanBase64 = ba
 function detectContentTypeFromBase64(base64: string): string { const cleanBase64 = base64.replace(/^data:image\/[a-z]+;base64,/, ''); if (cleanBase64.startsWith('iVBORw0KGgo')) return 'image/png'; if (cleanBase64.startsWith('/9j/')) return 'image/jpeg'; if (cleanBase64.startsWith('R0lGODlh') || cleanBase64.startsWith('R0lGODdh')) return 'image/gif'; if (cleanBase64.includes('UklGR') && cleanBase64.includes('V0VCUw')) return 'image/webp'; return 'image/png'; }
 
 // --- ENHANCED LLM PROMPT OPTIMIZATION ---
-const promptOptimizationCache = new Map<string, string>();
-const deNsfwRewriteCache = new Map<string, string>();
-
-/**
- * Enhanced prompt parsing with multiple fallback strategies
- * @param rawContent The raw response content from LLM
- * @returns Parsed prompt or null if extraction fails
- */
-function parseOptimizedPrompt(rawContent: string): string | null {
-    if (!rawContent?.trim()) {
-        console.log("[LLM_OPT] Raw content is empty or null");
-        return null;
-    }
-
-    console.log("[LLM_OPT] Raw LLM response content:");
-    console.log("=====================================");
-    console.log(rawContent);
-    console.log("=====================================");
-
-    // Strategy 1: Look for <prompt>...</prompt> tags (exact match)
-    const exactTagMatch = rawContent.match(/<prompt\s*>([\s\S]*?)<\/prompt\s*>/i);
-    if (exactTagMatch && exactTagMatch[1]?.trim()) {
-        const extracted = exactTagMatch[1].trim();
-        console.log("[LLM_OPT] Strategy 1: Found exact <prompt> tags");
-        console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
-        return extracted;
-    }
-
-    // Strategy 2: Look for <prompt> opening tag and extract everything after it
-    const openTagMatch = rawContent.match(/<prompt\s*>\s*([\s\S]*)/i);
-    if (openTagMatch && openTagMatch[1]?.trim()) {
-        let extracted = openTagMatch[1].trim();
-        
-        // Remove closing tag if it exists
-        extracted = extracted.replace(/<\/prompt\s*>[\s\S]*$/i, '').trim();
-        
-        if (extracted) {
-            console.log("[LLM_OPT] Strategy 2: Found <prompt> opening tag, extracted content after it");
-            console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
-            return extracted;
-        }
-    }
-
-    // Strategy 3: Look for common prompt indicators and extract content after them
-    const promptIndicators = [
-        /enhanced\s*prompt\s*:?\s*\n?([\s\S]*)/i,
-        /optimized\s*prompt\s*:?\s*\n?([\s\S]*)/i,
-        /improved\s*prompt\s*:?\s*\n?([\s\S]*)/i,
-        /final\s*prompt\s*:?\s*\n?([\s\S]*)/i,
-        /result\s*:?\s*\n?([\s\S]*)/i,
-        /here['']?s\s+the\s+enhanced\s+prompt\s*:?\s*\n?([\s\S]*)/i,
-        /the\s+enhanced\s+prompt\s+is\s*:?\s*\n?([\s\S]*)/i,
-        /safe\s+rewritten\s+prompt\s*:?\s*\n?([\s\S]*)/i,
-        /rewritten\s+prompt\s*:?\s*\n?([\s\S]*)/i,
-    ];
-
-    for (const indicator of promptIndicators) {
-        const match = rawContent.match(indicator);
-        if (match && match[1]?.trim()) {
-            let extracted = match[1].trim();
-            
-            // Clean up common artifacts
-            extracted = extracted
-                .replace(/^```[a-z]*\n?/, "") // Remove starting code blocks
-                .replace(/\n?```$/, "")       // Remove ending code blocks
-                .replace(/^['"]|['"]$/g, "")  // Remove surrounding quotes
-                .replace(/^\*\*|\*\*$/g, "")  // Remove bold markdown
-                .trim();
-            
-            if (extracted) {
-                console.log(`[LLM_OPT] Strategy 3: Found prompt indicator pattern`);
-                console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`);
-                return extracted;
-            }
-        }
-    }
-
-    // Strategy 4: Clean the full response and use as fallback
-    let cleanedContent = rawContent
-        .replace(/^```[a-z]*\n?/, "") // Remove starting code blocks
-        .replace(/\n?```$/, "")       // Remove ending code blocks
-        .replace(/^['"]|['"]$/g, "")  // Remove surrounding quotes
-        .replace(/^\*\*|\*\*$/g, "")  // Remove bold markdown
-        .replace(/^Here'?s?\s+(the\s+)?(enhanced|optimized|improved|safe\s+rewritten|rewritten)\s+prompt:?\s*/i, "") // Remove common prefixes
-        .replace(/^(Enhanced|Optimized|Improved|Safe\s+rewritten|Rewritten)\s+prompt:?\s*/i, "")
-        .trim();
-
-    if (cleanedContent && cleanedContent.length > 10) { // Reasonable length check
-        console.log("[LLM_OPT] Strategy 4: Using cleaned full response as fallback");
-        console.log(`[LLM_OPT] Cleaned content: "${cleanedContent.substring(0, 100)}..."`);
-        return cleanedContent;
-    }
-
-    console.log("[LLM_OPT] All parsing strategies failed - no valid prompt found");
-    return null;
-}
-
-/**
- * Generic LLM API caller used by both optimization and de-NSFW functions
- * @param originalText The original text to process
- * @param template The template to use for processing
- * @param cache The cache to use for this operation
- * @param operation Operation name for logging (e.g., "OPTIMIZATION", "DE_NSFW")
- * @returns Processed text or original text on failure
- */
-async function _callLlmApi(originalText: string, template: string, cache: Map<string, string>, operation: string): Promise<string> {
-    const cacheKey = originalText.trim().toLowerCase();
-    if (cache.has(cacheKey)) {
-        const cached = cache.get(cacheKey)!;
-        console.log(`[${operation}] Using cached result for: "${originalText.substring(0, 50)}..."`);
-        return cached;
-    }
-
-    try {
-        const prompt = template.replace('{ORIGINAL_PROMPT}', originalText);
-        
-        const requestBody = {
-            model: LLM_OPTIMIZATION_MODEL,
-            messages: [{ role: "user", content: prompt }],
-            max_tokens: 1000,
-            temperature: 0.4
-        };
-
-        const headers: HeadersInit = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
-        };
-        if (LLM_OPTIMIZATION_TOKEN) {
-            headers["Authorization"] = `Bearer ${LLM_OPTIMIZATION_TOKEN}`;
-        }
-
-        console.log(`[${operation}] Processing text:\n${originalText}`);
-        const response = await fetch(`${LLM_OPTIMIZATION_API_URL}/v1/chat/completions`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(requestBody)
-        });
-
-        if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            console.error(`[${operation}] API request failed: ${response.status} ${response.statusText}. Error: ${errorText}. Falling back to original text.`);
-            return originalText;
-        }
-
-        const data = await response.json();
-        const rawContent = data.choices?.[0]?.message?.content;
-
-        if (!rawContent) {
-            console.error(`[${operation}] No content in API response. Full response: ${JSON.stringify(data)}. Falling back to original text.`);
-            return originalText;
-        }
-
-        const processedText = parseOptimizedPrompt(rawContent);
-
-        if (!processedText) {
-            console.warn(`[${operation}] Failed to parse processed text from LLM response. Falling back to original.`);
-            return originalText;
-        }
-
-        // Additional validation
-        if (processedText.length < 5) {
-            console.warn(`[${operation}] Processed text too short (${processedText.length} chars). Falling back to original.`);
-            return originalText;
-        }
-
-        if (processedText.length > 2000) {
-            console.warn(`[${operation}] Processed text too long (${processedText.length} chars). Truncating to 2000 chars.`);
-            const truncated = processedText.substring(0, 2000).trim();
-            // Try to end at a complete sentence
-            const lastPeriod = truncated.lastIndexOf('.');
-            const finalText = lastPeriod > 1500 ? truncated.substring(0, lastPeriod + 1) : truncated;
-            
-            // Cache and return
-            if (cache.size >= 1000) {
-                const firstKey = cache.keys().next().value;
-                cache.delete(firstKey);
-            }
-            cache.set(cacheKey, finalText);
-            
-            console.log(`[${operation}] Processing successful (truncated).\n--- Original ---\n${originalText}\n--- Processed ---\n${finalText}\n-----------------`);
-            return finalText;
-        }
-
-        // Cache the result
-        if (cache.size >= 1000) {
-            const firstKey = cache.keys().next().value;
-            cache.delete(firstKey);
-        }
-        cache.set(cacheKey, processedText);
-
-        console.log(`[${operation}] Processing successful.\n--- Original ---\n${originalText}\n--- Processed ---\n${processedText}\n-----------------`);
-        return processedText;
-
-    } catch (error) {
-        console.error(`[${operation}] Error during processing: ${error.message}. Stack: ${error.stack}. Falling back to original text.`);
-        return originalText;
-    }
-}
-
-async function optimizePrompt(originalPrompt: string): Promise<string> {
-    if (!LLM_OPTIMIZATION_ENABLED) {
-        return originalPrompt;
-    }
-
-    return await _callLlmApi(originalPrompt, LLM_OPTIMIZATION_TEMPLATE, promptOptimizationCache, "OPTIMIZATION");
-}
-
-async function rewritePromptForSafety(promptToRewrite: string): Promise<string | null> {
-    if (!DE_NSFW_ENABLED) {
-        return null;
-    }
-
-    const rewrittenPrompt = await _callLlmApi(promptToRewrite, DE_NSFW_TEMPLATE, deNsfwRewriteCache, "DE_NSFW");
-    
-    // If the rewritten prompt is the same as the original, it means the rewriting failed or wasn't necessary
-    if (rewrittenPrompt === promptToRewrite) {
-        console.warn("[DE_NSFW] Rewritten prompt is identical to original. This may indicate rewriting failure.");
-        return null;
-    }
-    
-    return rewrittenPrompt;
-}
+const promptOptimizationCache = new Map<string, string>(); const deNsfwRewriteCache = new Map<string, string>();
+function parseOptimizedPrompt(rawContent: string): string | null { if (!rawContent?.trim()) { console.log("[LLM_OPT] Raw content is empty or null"); return null; } console.log("[LLM_OPT] Raw LLM response content:"); console.log("====================================="); console.log(rawContent); console.log("====================================="); const exactTagMatch = rawContent.match(/<prompt\s*>([\s\S]*?)<\/prompt\s*>/i); if (exactTagMatch && exactTagMatch[1]?.trim()) { const extracted = exactTagMatch[1].trim(); console.log("[LLM_OPT] Strategy 1: Found exact <prompt> tags"); console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`); return extracted; } const openTagMatch = rawContent.match(/<prompt\s*>\s*([\s\S]*)/i); if (openTagMatch && openTagMatch[1]?.trim()) { let extracted = openTagMatch[1].trim(); extracted = extracted.replace(/<\/prompt\s*>[\s\S]*$/i, '').trim(); if (extracted) { console.log("[LLM_OPT] Strategy 2: Found <prompt> opening tag, extracted content after it"); console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`); return extracted; } } const promptIndicators = [/enhanced\s*prompt\s*:?\s*\n?([\s\S]*)/i, /optimized\s*prompt\s*:?\s*\n?([\s\S]*)/i, /improved\s*prompt\s*:?\s*\n?([\s\S]*)/i, /final\s*prompt\s*:?\s*\n?([\s\S]*)/i, /result\s*:?\s*\n?([\s\S]*)/i, /here['']?s\s+the\s+enhanced\s+prompt\s*:?\s*\n?([\s\S]*)/i, /the\s+enhanced\s+prompt\s+is\s*:?\s*\n?([\s\S]*)/i, /safe\s+rewritten\s+prompt\s*:?\s*\n?([\s\S]*)/i, /rewritten\s+prompt\s*:?\s*\n?([\s\S]*)/i,]; for (const indicator of promptIndicators) { const match = rawContent.match(indicator); if (match && match[1]?.trim()) { let extracted = match[1].trim(); extracted = extracted.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").replace(/^['"]|['"]$/g, "").replace(/^\*\*|\*\*$/g, "").trim(); if (extracted) { console.log(`[LLM_OPT] Strategy 3: Found prompt indicator pattern`); console.log(`[LLM_OPT] Extracted: "${extracted.substring(0, 100)}..."`); return extracted; } } } let cleanedContent = rawContent.replace(/^```[a-z]*\n?/, "").replace(/\n?```$/, "").replace(/^['"]|['"]$/g, "").replace(/^\*\*|\*\*$/g, "").replace(/^Here'?s?\s+(the\s+)?(enhanced|optimized|improved|safe\s+rewritten|rewritten)\s+prompt:?\s*/i, "").replace(/^(Enhanced|Optimized|Improved|Safe\s+rewritten|Rewritten)\s+prompt:?\s*/i, "").trim(); if (cleanedContent && cleanedContent.length > 10) { console.log("[LLM_OPT] Strategy 4: Using cleaned full response as fallback"); console.log(`[LLM_OPT] Cleaned content: "${cleanedContent.substring(0, 100)}..."`); return cleanedContent; } console.log("[LLM_OPT] All parsing strategies failed - no valid prompt found"); return null; }
+async function _callLlmApi(originalText: string, template: string, cache: Map<string, string>, operation: string): Promise<string> { const cacheKey = originalText.trim().toLowerCase(); if (cache.has(cacheKey)) { const cached = cache.get(cacheKey)!; console.log(`[${operation}] Using cached result for: "${originalText.substring(0, 50)}..."`); return cached; } try { const prompt = template.replace('{ORIGINAL_PROMPT}', originalText); const requestBody = { model: LLM_OPTIMIZATION_MODEL, messages: [{ role: "user", content: prompt }], max_tokens: 1000, temperature: 0.4 }; const headers: HeadersInit = { "Content-Type": "application/json", "Accept": "application/json" }; if (LLM_OPTIMIZATION_TOKEN) { headers["Authorization"] = `Bearer ${LLM_OPTIMIZATION_TOKEN}`; } console.log(`[${operation}] Processing text:\n${originalText}`); const response = await fetch(`${LLM_OPTIMIZATION_API_URL}/v1/chat/completions`, { method: "POST", headers, body: JSON.stringify(requestBody) }); if (!response.ok) { const errorText = await response.text().catch(() => 'Unknown error'); console.error(`[${operation}] API request failed: ${response.status} ${response.statusText}. Error: ${errorText}. Falling back to original text.`); return originalText; } const data = await response.json(); const rawContent = data.choices?.[0]?.message?.content; if (!rawContent) { console.error(`[${operation}] No content in API response. Full response: ${JSON.stringify(data)}. Falling back to original text.`); return originalText; } const processedText = parseOptimizedPrompt(rawContent); if (!processedText) { console.warn(`[${operation}] Failed to parse processed text from LLM response. Falling back to original.`); return originalText; } if (processedText.length < 5) { console.warn(`[${operation}] Processed text too short (${processedText.length} chars). Falling back to original.`); return originalText; } if (processedText.length > 2000) { console.warn(`[${operation}] Processed text too long (${processedText.length} chars). Truncating to 2000 chars.`); const truncated = processedText.substring(0, 2000).trim(); const lastPeriod = truncated.lastIndexOf('.'); const finalText = lastPeriod > 1500 ? truncated.substring(0, lastPeriod + 1) : truncated; if (cache.size >= 1000) { const firstKey = cache.keys().next().value; cache.delete(firstKey); } cache.set(cacheKey, finalText); console.log(`[${operation}] Processing successful (truncated).\n--- Original ---\n${originalText}\n--- Processed ---\n${finalText}\n-----------------`); return finalText; } if (cache.size >= 1000) { const firstKey = cache.keys().next().value; cache.delete(firstKey); } cache.set(cacheKey, processedText); console.log(`[${operation}] Processing successful.\n--- Original ---\n${originalText}\n--- Processed ---\n${processedText}\n-----------------`); return processedText; } catch (error) { console.error(`[${operation}] Error during processing: ${error.message}. Stack: ${error.stack}. Falling back to original text.`); return originalText; } }
+async function optimizePrompt(originalPrompt: string): Promise<string> { if (!LLM_OPTIMIZATION_ENABLED) { return originalPrompt; } return await _callLlmApi(originalPrompt, LLM_OPTIMIZATION_TEMPLATE, promptOptimizationCache, "OPTIMIZATION"); }
+async function rewritePromptForSafety(promptToRewrite: string): Promise<string | null> { if (!DE_NSFW_ENABLED) { return null; } const rewrittenPrompt = await _callLlmApi(promptToRewrite, DE_NSFW_TEMPLATE, deNsfwRewriteCache, "DE_NSFW"); if (rewrittenPrompt === promptToRewrite) { console.warn("[DE_NSFW] Rewritten prompt is identical to original. This may indicate rewriting failure."); return null; } return rewrittenPrompt; }
 
 // --- IMAGE UPLOADER CLASSES ---
 interface ImageUploader { upload(data: Uint8Array, filename: string): Promise<{ url: string } | null>; }
@@ -459,42 +131,22 @@ interface KvCacheEntry { hostedUrl?: string; revisedPrompt?: string; blocked?: b
 async function getFromKvCache(hash: string): Promise<KvCacheEntry | null> { return kv ? (await kv.get<KvCacheEntry>(["images", hash])).value : null; }
 async function addToKvCache(hash: string, entry: KvCacheEntry): Promise<void> { if (kv) { await kv.set(["images", hash], entry); console.log(`[CACHE_KV] Added${entry.blocked ? ' (blocked)' : ''}${entry.fallbackFailed ? ' (fallback_failed)' : ''}${entry.rewrittenPrompt ? ' (rewritten)' : ''}: ${hash}`); } }
 async function deleteFromKvCache(hash: string): Promise<boolean> { if (!kv) return false; const res = await kv.atomic().check({ key: ["images", hash], versionstamp: null }).delete(["images", hash]).commit(); return res.ok; }
-
 interface FsCacheEntry { data?: Uint8Array; contentType?: string; revisedPrompt?: string; blocked?: boolean; fallbackFailed?: boolean; optimizedPrompt?: string; rewrittenPrompt?: string; }
 interface FsCacheMetadata { contentType?: string; originalUrl?: string; revisedPrompt?: string; createdAt: string; blocked?: boolean; fallbackFailed?: boolean; optimizedPrompt?: string; rewrittenPrompt?: string; }
 function getCacheFilePaths(hash: string) { return { dataPath: join(CACHE_DIR, `${hash}.data`), metaPath: join(CACHE_DIR, `${hash}.meta.json`) }; }
-
-async function getFromFsCache(hash: string): Promise<FsCacheEntry | null> {
-    const { dataPath, metaPath } = getCacheFilePaths(hash);
-    try {
-        if (!(await Deno.stat(metaPath).catch(() => null))) return null;
-        const metadata = JSON.parse(await Deno.readTextFile(metaPath)) as FsCacheMetadata;
-        if (metadata.blocked) return { blocked: true, revisedPrompt: metadata.revisedPrompt, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt };
-        if (metadata.fallbackFailed) return { fallbackFailed: true, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt };
-        const data = await Deno.readFile(dataPath);
-        return { data, contentType: metadata.contentType, revisedPrompt: metadata.revisedPrompt, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt };
-    } catch (e) {
-        if (!(e instanceof Deno.errors.NotFound)) console.error(`[CACHE_FS] Read error for ${hash}:`, e);
-        return null;
-    }
-}
-async function addToFsCache(hash: string, metadata: FsCacheMetadata, data?: Uint8Array): Promise<void> {
-    const { dataPath, metaPath } = getCacheFilePaths(hash);
-    try {
-        const promises = [ Deno.writeTextFile(metaPath, JSON.stringify(metadata, null, 2)) ];
-        if (data && !metadata.blocked && !metadata.fallbackFailed) {
-            promises.push(Deno.writeFile(dataPath, data));
-        }
-        await Promise.all(promises);
-        console.log(`[CACHE_FS] Added${metadata.blocked ? ' (blocked)' : ''}${metadata.fallbackFailed ? ' (fallback_failed)' : ''}${metadata.rewrittenPrompt ? ' (rewritten)' : ''}: ${hash}`);
-    } catch (e) {
-        console.error(`[CACHE_FS] Write error for ${hash}:`, e);
-    }
-}
+async function getFromFsCache(hash: string): Promise<FsCacheEntry | null> { const { dataPath, metaPath } = getCacheFilePaths(hash); try { if (!(await Deno.stat(metaPath).catch(() => null))) return null; const metadata = JSON.parse(await Deno.readTextFile(metaPath)) as FsCacheMetadata; if (metadata.blocked) return { blocked: true, revisedPrompt: metadata.revisedPrompt, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt }; if (metadata.fallbackFailed) return { fallbackFailed: true, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt }; const data = await Deno.readFile(dataPath); return { data, contentType: metadata.contentType, revisedPrompt: metadata.revisedPrompt, optimizedPrompt: metadata.optimizedPrompt, rewrittenPrompt: metadata.rewrittenPrompt }; } catch (e) { if (!(e instanceof Deno.errors.NotFound)) console.error(`[CACHE_FS] Read error for ${hash}:`, e); return null; } }
+async function addToFsCache(hash: string, metadata: FsCacheMetadata, data?: Uint8Array): Promise<void> { const { dataPath, metaPath } = getCacheFilePaths(hash); try { const promises = [ Deno.writeTextFile(metaPath, JSON.stringify(metadata, null, 2)) ]; if (data && !metadata.blocked && !metadata.fallbackFailed) { promises.push(Deno.writeFile(dataPath, data)); } await Promise.all(promises); console.log(`[CACHE_FS] Added${metadata.blocked ? ' (blocked)' : ''}${metadata.fallbackFailed ? ' (fallback_failed)' : ''}${metadata.rewrittenPrompt ? ' (rewritten)' : ''}: ${hash}`); } catch (e) { console.error(`[CACHE_FS] Write error for ${hash}:`, e); } }
 async function deleteFromFsCache(hash: string): Promise<boolean> { const { dataPath, metaPath } = getCacheFilePaths(hash); const results = await Promise.allSettled([ Deno.remove(dataPath), Deno.remove(metaPath) ]); return results.some(r => r.status === 'fulfilled'); }
 
 // --- CORE BACKEND LOGIC ---
 type GenerationResult = | { status: "success"; imageData: Uint8Array; contentType: string; revisedPrompt?: string } | { status: "blocked"; reason: string } | { status: "error"; reason: string };
+
+// MODIFICATION: Define a new return type for the backend function
+type BackendAttemptSummary = {
+  finalResult: GenerationResult;
+  wasBlocked: boolean; // True if any attempt was blocked
+};
+
 async function fetchImageFromUrl(imageUrl: string): Promise<{ data: Uint8Array, contentType: string } | null> { try { const response = await fetch(imageUrl); if (!response.ok) { console.error(`[FETCH] Failed to fetch image from ${imageUrl}: ${response.status}`); return null; } const contentType = response.headers.get("content-type") || "image/png"; const arrayBuffer = await response.arrayBuffer(); return { data: new Uint8Array(arrayBuffer), contentType }; } catch (e) { console.error(`[FETCH] Error fetching image data from ${imageUrl}:`, e); return null; } }
 
 function getNextBackendUrl(exclude: string[] = []): string | null {
@@ -504,13 +156,17 @@ function getNextBackendUrl(exclude: string[] = []): string | null {
     return availableBackends[randomIndex];
 }
 
-async function generateImageFromBackend(description: string, optimizedDescription: string, width?: number, height?: number, model?: string, seed?: number): Promise<GenerationResult> {
+// MODIFICATION: The function now returns the new BackendAttemptSummary type
+async function generateImageFromBackend(description: string, optimizedDescription: string, width?: number, height?: number, model?: string, seed?: number): Promise<BackendAttemptSummary> {
     const uniqueBackendCount = new Set(BACKEND_API_URLS).size;
     const maxAttempts = Math.max(uniqueBackendCount, BLOCKED_RETRY_ATTEMPTS);
     
     let lastResult: GenerationResult = { status: "error", reason: "No backends were available or all failed." };
     let blockedAttempts = 0;
     const triedBackends: string[] = [];
+
+    // MODIFICATION: Add a flag to track if any block occurred
+    let wasBlockedDuringAttempts = false;
 
     for (let i = 0; i < maxAttempts; i++) {
         const backendUrl = getNextBackendUrl(triedBackends);
@@ -524,6 +180,8 @@ async function generateImageFromBackend(description: string, optimizedDescriptio
         if (blockedAttempts >= BLOCKED_RETRY_ATTEMPTS) {
             console.log(`[MODERATION] Blocked retry limit (${BLOCKED_RETRY_ATTEMPTS}) reached.`);
             lastResult = { status: "blocked", reason: `Request was blocked by ${blockedAttempts} backends.` };
+            // MODIFICATION: Ensure the flag is set if we exit due to block limit
+            wasBlockedDuringAttempts = true;
             break;
         }
 
@@ -546,7 +204,17 @@ async function generateImageFromBackend(description: string, optimizedDescriptio
             const res = await fetch(requestUrl, { method: "POST", headers, body: JSON.stringify(payload) });
 
             if (!res.ok) {
-                lastResult = { status: "error", reason: `Backend returned error: ${res.status} from ${requestUrl}`};
+                if (res.status === 400) { 
+                    let errorDetail = "Reason unspecified.";
+                    try { const errorJson = await res.json(); errorDetail = errorJson.detail || errorJson.error?.message || JSON.stringify(errorJson); if (typeof errorDetail === 'string' && errorDetail.toLowerCase().includes("filtered by safety checks")) { lastResult = { status: "blocked", reason: `Backend ${backendUrl} blocked the prompt (safety filter).` }; } else { lastResult = { status: "blocked", reason: `Backend ${backendUrl} rejected the prompt (400 Bad Request).` }; } } catch (jsonError) { lastResult = { status: "blocked", reason: `Backend ${backendUrl} rejected the prompt (400 Bad Request, unparseable body).` }; }
+                    console.warn(`[ATTEMPT_BLOCKED] ${lastResult.reason}`);
+                    blockedAttempts++;
+                    // MODIFICATION: Set the flag to true because a block was detected
+                    wasBlockedDuringAttempts = true; 
+                    continue;
+                }
+                
+                lastResult = { status: "error", reason: `Backend returned error: ${res.status} from ${requestUrl}` };
                 console.error(`[ATTEMPT_FAIL] ${lastResult.reason}. Trying next backend...`);
                 continue;
             }
@@ -556,27 +224,32 @@ async function generateImageFromBackend(description: string, optimizedDescriptio
             
             if (!data || !(data.url || data.b64_json)) {
                 blockedAttempts++;
-                lastResult = { status: "blocked", reason: `Backend ${backendUrl} returned no image data (likely moderated)` };
-                console.warn(`[ATTEMPT_BLOCKED] ${lastResult.reason}.`);
+                lastResult = { status: "blocked", reason: `Backend ${backendUrl} returned no image data (likely moderated).` };
+                console.warn(`[ATTEMPT_BLOCKED] ${lastResult.reason}`);
+                // MODIFICATION: Set the flag to true here as well
+                wasBlockedDuringAttempts = true;
                 continue;
             }
 
-            if (data.b64_json) {
-                console.log(`[BACKEND] SUCCESS: Received base64 image data from ${backendUrl}`);
-                return { status: "success", imageData: base64ToUint8Array(data.b64_json), contentType: detectContentTypeFromBase64(data.b64_json), revisedPrompt: data.revised_prompt };
-            }
+            // If we succeed, we wrap the result and return immediately.
+            const successResult: GenerationResult = data.b64_json
+                ? { status: "success", imageData: base64ToUint8Array(data.b64_json), contentType: detectContentTypeFromBase64(data.b64_json), revisedPrompt: data.revised_prompt }
+                : await (async () => {
+                    const imageResult = await fetchImageFromUrl(data.url);
+                    return imageResult
+                        ? { status: "success", imageData: imageResult.data, contentType: imageResult.contentType, revisedPrompt: data.revised_prompt }
+                        : { status: "error", reason: `Failed to fetch image from URL: ${data.url}` };
+                })();
             
-            if (data.url) {
-                console.log(`[BACKEND] Received image URL from ${backendUrl}: ${data.url}`);
-                const imageResult = await fetchImageFromUrl(data.url);
-                if (!imageResult) {
-                    lastResult = { status: "error", reason: `Failed to fetch image from URL: ${data.url}` };
-                    console.error(`[ATTEMPT_FAIL] ${lastResult.reason}. Trying next backend...`);
-                    continue;
-                }
-                console.log(`[BACKEND] SUCCESS: Fetched image data from ${backendUrl}`);
-                return { status: "success", imageData: imageResult.data, contentType: imageResult.contentType, revisedPrompt: data.revised_prompt };
+            if (successResult.status === 'success') {
+                console.log(`[BACKEND] SUCCESS: Got image from ${backendUrl}`);
+                return { finalResult: successResult, wasBlocked: wasBlockedDuringAttempts };
+            } else {
+                lastResult = successResult; // It's an error from fetchImageFromUrl
+                console.error(`[ATTEMPT_FAIL] ${lastResult.reason}. Trying next backend...`);
+                continue;
             }
+
         } catch (e) {
             lastResult = { status: "error", reason: `Network error for ${backendUrl}: ${e.message}` };
             console.error(`[ATTEMPT_FAIL] ${lastResult.reason}. Trying next backend...`);
@@ -584,111 +257,12 @@ async function generateImageFromBackend(description: string, optimizedDescriptio
     }
     
     console.log(`All backend attempts failed. Final result: ${lastResult.status}`);
-    return lastResult;
+    // MODIFICATION: Return the summary object
+    return { finalResult: lastResult, wasBlocked: wasBlockedDuringAttempts };
 }
 
-async function generateImageFromPollinations(description: string, optimizedDescription: string, width?: number, height?: number): Promise<{ imageData: Uint8Array; contentType: string } | null> {
-    const promptToUse = optimizedDescription;
-    console.log(`[POLLINATIONS] Generating image from pollinations.ai for prompt: "${promptToUse}"`);
-
-    try {
-        const fallbackUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}`);
-        fallbackUrl.searchParams.set("model", "flux-pro");
-        fallbackUrl.searchParams.set("nofeed", "true");
-        if (width) fallbackUrl.searchParams.set("width", String(width));
-        if (height) fallbackUrl.searchParams.set("height", String(height));
-
-        console.log(`[POLLINATIONS] Requesting image from: ${fallbackUrl.href}`);
-
-        const response = await fetch(fallbackUrl.href);
-        if (!response.ok) {
-            console.error(`[POLLINATIONS] Failed to fetch image: ${response.status} ${response.statusText}`);
-            return null;
-        }
-
-        const contentType = response.headers.get("content-type") || "image/png";
-        const arrayBuffer = await response.arrayBuffer();
-        const imageData = new Uint8Array(arrayBuffer);
-
-        console.log(`[POLLINATIONS] Successfully downloaded image (${imageData.length} bytes, ${contentType})`);
-        return { imageData, contentType };
-
-    } catch (error) {
-        console.error(`[POLLINATIONS] Error generating image:`, error);
-        return null;
-    }
-}
-
-async function createFallbackResponse(description: string, optimizedDescription: string, finalPromptUsed: string, width?: number, height?: number, model?: string, seed?: number): Promise<Response> {
-    console.log(`[FALLBACK] Using pollinations.ai fallback for prompt: "${description}"`);
-
-    const cacheHash = await generateCacheHash(description, width, height, model, seed);
-    const pollinationsResult = await generateImageFromPollinations(description, finalPromptUsed, width, height);
-
-    if (!pollinationsResult) {
-        console.error(`[FALLBACK] Failed to generate image from pollinations.ai. Caching failure status.`);
-        try {
-            if (IMAGE_HOSTING_ENABLED) {
-                await addToKvCache(cacheHash, { 
-                    fallbackFailed: true, 
-                    optimizedPrompt: optimizedDescription,
-                    rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined
-                });
-            } else {
-                await addToFsCache(cacheHash, { 
-                    createdAt: new Date().toISOString(), 
-                    fallbackFailed: true, 
-                    optimizedPrompt: optimizedDescription,
-                    rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined
-                });
-            }
-        } catch (cacheError) {
-            console.error(`[FALLBACK] Failed to cache the fallback failure status:`, cacheError);
-        }
-        return new Response("Failed to generate image from fallback provider", {
-            status: Status.InternalServerError,
-            headers: { "Content-Type": "text/plain" }
-        });
-    }
-
-    const { imageData, contentType } = pollinationsResult;
-
-    try {
-        if (IMAGE_HOSTING_ENABLED) {
-            const uploader = ImageUploaderFactory.create();
-            if (uploader) {
-                const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
-                if (upload?.url) {
-                    await addToKvCache(cacheHash, { 
-                        hostedUrl: upload.url, 
-                        optimizedPrompt: optimizedDescription,
-                        rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined
-                    });
-                    console.log(`[FALLBACK] Cached fallback image to hosting provider: ${upload.url}`);
-                    return new Response(imageData, { headers: { "Content-Type": contentType } });
-                } else {
-                    console.warn(`[FALLBACK] Failed to upload to hosting provider, returning image directly`);
-                }
-            } else {
-                console.warn(`[FALLBACK] No image uploader configured, returning image directly`);
-            }
-        } else {
-            const metadata: FsCacheMetadata = {
-                contentType,
-                originalUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPromptUsed)}`,
-                createdAt: new Date().toISOString(),
-                optimizedPrompt: optimizedDescription,
-                rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined
-            };
-            await addToFsCache(cacheHash, metadata, imageData);
-            console.log(`[FALLBACK] Cached fallback image to file system`);
-        }
-    } catch (cacheError) {
-        console.error(`[FALLBACK] Failed to cache fallback image:`, cacheError);
-    }
-
-    return new Response(imageData, { headers: { "Content-Type": contentType } });
-}
+async function generateImageFromPollinations(description: string, optimizedDescription: string, width?: number, height?: number): Promise<{ imageData: Uint8Array; contentType: string } | null> { const promptToUse = optimizedDescription; console.log(`[POLLINATIONS] Generating image from pollinations.ai for prompt: "${promptToUse}"`); try { const fallbackUrl = new URL(`https://image.pollinations.ai/prompt/${encodeURIComponent(promptToUse)}`); fallbackUrl.searchParams.set("model", "flux-pro"); fallbackUrl.searchParams.set("nofeed", "true"); if (width) fallbackUrl.searchParams.set("width", String(width)); if (height) fallbackUrl.searchParams.set("height", String(height)); console.log(`[POLLINATIONS] Requesting image from: ${fallbackUrl.href}`); const response = await fetch(fallbackUrl.href); if (!response.ok) { console.error(`[POLLINATIONS] Failed to fetch image: ${response.status} ${response.statusText}`); return null; } const contentType = response.headers.get("content-type") || "image/png"; const arrayBuffer = await response.arrayBuffer(); const imageData = new Uint8Array(arrayBuffer); console.log(`[POLLINATIONS] Successfully downloaded image (${imageData.length} bytes, ${contentType})`); return { imageData, contentType }; } catch (error) { console.error(`[POLLINATIONS] Error generating image:`, error); return null; } }
+async function createFallbackResponse(description: string, optimizedDescription: string, finalPromptUsed: string, width?: number, height?: number, model?: string, seed?: number): Promise<Response> { console.log(`[FALLBACK] Using pollinations.ai fallback for prompt: "${description}"`); const cacheHash = await generateCacheHash(description, width, height, model, seed); const pollinationsResult = await generateImageFromPollinations(description, finalPromptUsed, width, height); if (!pollinationsResult) { console.error(`[FALLBACK] Failed to generate image from pollinations.ai. Caching failure status.`); try { if (IMAGE_HOSTING_ENABLED) { await addToKvCache(cacheHash, { fallbackFailed: true, optimizedPrompt: optimizedDescription, rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined }); } else { await addToFsCache(cacheHash, { createdAt: new Date().toISOString(), fallbackFailed: true, optimizedPrompt: optimizedDescription, rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined }); } } catch (cacheError) { console.error(`[FALLBACK] Failed to cache the fallback failure status:`, cacheError); } return new Response("Failed to generate image from fallback provider", { status: Status.InternalServerError, headers: { "Content-Type": "text/plain" } }); } const { imageData, contentType } = pollinationsResult; try { if (IMAGE_HOSTING_ENABLED) { const uploader = ImageUploaderFactory.create(); if (uploader) { const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`); if (upload?.url) { await addToKvCache(cacheHash, { hostedUrl: upload.url, optimizedPrompt: optimizedDescription, rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined }); console.log(`[FALLBACK] Cached fallback image to hosting provider: ${upload.url}`); return new Response(imageData, { headers: { "Content-Type": contentType } }); } else { console.warn(`[FALLBACK] Failed to upload to hosting provider, returning image directly`); } } else { console.warn(`[FALLBACK] No image uploader configured, returning image directly`); } } else { const metadata: FsCacheMetadata = { contentType, originalUrl: `https://image.pollinations.ai/prompt/${encodeURIComponent(finalPromptUsed)}`, createdAt: new Date().toISOString(), optimizedPrompt: optimizedDescription, rewrittenPrompt: finalPromptUsed !== optimizedDescription ? finalPromptUsed : undefined }; await addToFsCache(cacheHash, metadata, imageData); console.log(`[FALLBACK] Cached fallback image to file system`); } } catch (cacheError) { console.error(`[FALLBACK] Failed to cache fallback image:`, cacheError); } return new Response(imageData, { headers: { "Content-Type": contentType } }); }
 
 async function handler(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -710,17 +284,8 @@ async function handler(request: Request): Promise<Response> {
         const optimizedDescription = cached?.optimizedPrompt ? cached.optimizedPrompt : await optimizePrompt(description);
 
         if (cached) {
-            if (cached.optimizedPrompt) {
-                 console.log(`[CACHE] Reusing cached optimized prompt.`);
-            }
-            
-            if (cached.blocked || cached.fallbackFailed) {
-                const reason = cached.blocked ? 'BLOCKED' : 'FALLBACK_FAILED';
-                const promptForFallback = cached.rewrittenPrompt || optimizedDescription;
-                console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] HIT (${reason}): ${cacheHash}. Re-attempting fallback directly.`);
-                return await createFallbackResponse(description, optimizedDescription, promptForFallback, width, height, model, seed);
-            }
-
+            if (cached.optimizedPrompt) { console.log(`[CACHE] Reusing cached optimized prompt.`); }
+            if (cached.blocked || cached.fallbackFailed) { const reason = cached.blocked ? 'BLOCKED' : 'FALLBACK_FAILED'; const promptForFallback = cached.rewrittenPrompt || optimizedDescription; console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] HIT (${reason}): ${cacheHash}. Re-attempting fallback directly.`); return await createFallbackResponse(description, optimizedDescription, promptForFallback, width, height, model, seed); }
             console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] HIT: ${cacheHash}`);
             if (IMAGE_HOSTING_ENABLED) { return Response.redirect((cached as KvCacheEntry).hostedUrl!, Status.Found); }
             else { const fsEntry = cached as FsCacheEntry; return new Response(fsEntry.data, { headers: { "Content-Type": fsEntry.contentType! } }); }
@@ -728,156 +293,62 @@ async function handler(request: Request): Promise<Response> {
         
         console.log(`[CACHE_${IMAGE_HOSTING_ENABLED ? 'KV' : 'FS'}] MISS: ${cacheHash}`);
 
-        // First attempt with optimized prompt
-        const initialGenResult = await generateImageFromBackend(description, optimizedDescription, width, height, model, seed);
+        // MODIFICATION: Call the updated function and destructure the summary
+        const backendSummary = await generateImageFromBackend(description, optimizedDescription, width, height, model, seed);
+        const initialGenResult = backendSummary.finalResult;
         
         if (initialGenResult.status === 'success') {
-            // First attempt succeeded - handle success normally
             const { imageData, contentType, revisedPrompt } = initialGenResult;
-            if (IMAGE_HOSTING_ENABLED) {
-                const uploader = ImageUploaderFactory.create();
-                if (!uploader) { 
-                    console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); 
-                    return await createFallbackResponse(description, optimizedDescription, optimizedDescription, width, height, model, seed); 
-                }
-                const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
-                if (!upload?.url) { 
-                    console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); 
-                    return await createFallbackResponse(description, optimizedDescription, optimizedDescription, width, height, model, seed); 
-                }
-                await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt, optimizedPrompt: optimizedDescription });
-                return Response.redirect(upload.url, Status.Found);
-            } else {
-                const metadata: FsCacheMetadata = { contentType, revisedPrompt, createdAt: new Date().toISOString(), optimizedPrompt: optimizedDescription };
-                await addToFsCache(cacheHash, metadata, imageData);
-                return new Response(imageData, { headers: { "Content-Type": contentType } });
-            }
+            if (IMAGE_HOSTING_ENABLED) { const uploader = ImageUploaderFactory.create(); if (!uploader) { console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); return await createFallbackResponse(description, optimizedDescription, optimizedDescription, width, height, model, seed); } const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`); if (!upload?.url) { console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); return await createFallbackResponse(description, optimizedDescription, optimizedDescription, width, height, model, seed); } await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt, optimizedPrompt: optimizedDescription }); return Response.redirect(upload.url, Status.Found); }
+            else { const metadata: FsCacheMetadata = { contentType, revisedPrompt, createdAt: new Date().toISOString(), optimizedPrompt: optimizedDescription }; await addToFsCache(cacheHash, metadata, imageData); return new Response(imageData, { headers: { "Content-Type": contentType } }); }
         } else {
-            // First attempt failed - enter new multi-step recovery logic
-            let finalResult: GenerationResult | null = null;
-            let finalPromptUsed = optimizedDescription; // Track the final prompt used
+            let finalResultHolder: { result: GenerationResult | null } = { result: null };
+            let finalPromptUsed = optimizedDescription;
             let wasRewritten = false;
 
-            // Check if we should try rewriting the prompt
-            if (initialGenResult.status === 'blocked' && DE_NSFW_ENABLED) {
-                console.log("[REWRITE] Initial generation blocked. Attempting prompt rewrite for safety.");
+            // MODIFICATION: The condition now checks the 'wasBlocked' flag from the summary
+            if (backendSummary.wasBlocked && DE_NSFW_ENABLED) {
+                console.log("[REWRITE] A block was detected during backend attempts. Attempting prompt rewrite for safety.");
                 const rewrittenPrompt = await rewritePromptForSafety(optimizedDescription);
-
                 if (rewrittenPrompt) {
                     console.log("[REWRITE] Prompt rewritten successfully. Re-attempting generation.");
                     console.log(`[REWRITE] Original: "${optimizedDescription}"`);
                     console.log(`[REWRITE] Rewritten: "${rewrittenPrompt}"`);
-                    
-                    finalPromptUsed = rewrittenPrompt; // Update the prompt to use
+                    finalPromptUsed = rewrittenPrompt;
                     wasRewritten = true;
-
-                    // Second attempt with rewritten prompt
-                    const secondGenResult = await generateImageFromBackend(description, rewrittenPrompt, width, height, model, seed);
-                    finalResult = secondGenResult;
+                    // Re-attempt generation with rewritten prompt
+                    const secondGenSummary = await generateImageFromBackend(description, rewrittenPrompt, width, height, model, seed);
+                    finalResultHolder.result = secondGenSummary.finalResult;
                 } else {
                     console.log("[REWRITE] Prompt rewrite failed or returned null. Proceeding to fallback.");
-                    finalResult = initialGenResult; // Keep the original failure
+                    finalResultHolder.result = initialGenResult;
                 }
             } else {
-                // Not blocked or rewriting disabled - keep original result
-                finalResult = initialGenResult;
+                finalResultHolder.result = initialGenResult;
             }
 
-            // Handle final result
+            const finalResult = finalResultHolder.result;
+
             if (finalResult && finalResult.status === 'success') {
-                // Recovery successful!
-                console.log("[RECOVERY] Successfully generated image after rewrite.");
+                console.log("[RECOVERY] Successfully generated image after multi-step process.");
                 const { imageData, contentType, revisedPrompt } = finalResult;
-                
-                if (IMAGE_HOSTING_ENABLED) {
-                    const uploader = ImageUploaderFactory.create();
-                    if (!uploader) { 
-                        console.error("[UPLOAD_FAIL] Image uploader not configured. Using fallback."); 
-                        return await createFallbackResponse(description, optimizedDescription, finalPromptUsed, width, height, model, seed); 
-                    }
-                    const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`);
-                    if (!upload?.url) { 
-                        console.error("[UPLOAD_FAIL] Failed to upload image to hosting provider. Using fallback."); 
-                        return await createFallbackResponse(description, optimizedDescription, finalPromptUsed, width, height, model, seed); 
-                    }
-                    await addToKvCache(cacheHash, { 
-                        hostedUrl: upload.url, 
-                        revisedPrompt, 
-                        optimizedPrompt: optimizedDescription,
-                        rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined
-                    });
-                    return Response.redirect(upload.url, Status.Found);
-                } else {
-                    const metadata: FsCacheMetadata = { 
-                        contentType, 
-                        revisedPrompt, 
-                        createdAt: new Date().toISOString(), 
-                        optimizedPrompt: optimizedDescription,
-                        rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined
-                    };
-                    await addToFsCache(cacheHash, metadata, imageData);
-                    return new Response(imageData, { headers: { "Content-Type": contentType } });
-                }
+                if (IMAGE_HOSTING_ENABLED) { const uploader = ImageUploaderFactory.create(); if (!uploader) { return await createFallbackResponse(description, optimizedDescription, finalPromptUsed, width, height, model, seed); } const upload = await uploader.upload(imageData, `${crypto.randomUUID().substring(0, 12)}.png`); if (!upload?.url) { return await createFallbackResponse(description, optimizedDescription, finalPromptUsed, width, height, model, seed); } await addToKvCache(cacheHash, { hostedUrl: upload.url, revisedPrompt, optimizedPrompt: optimizedDescription, rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined }); return Response.redirect(upload.url, Status.Found); }
+                else { const metadata: FsCacheMetadata = { contentType, revisedPrompt, createdAt: new Date().toISOString(), optimizedPrompt: optimizedDescription, rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined }; await addToFsCache(cacheHash, metadata, imageData); return new Response(imageData, { headers: { "Content-Type": contentType } }); }
             } else {
-                // All attempts failed - use fallback
-                const failureReason = finalResult ? finalResult.reason : "Rewrite failed";
+                const failureReason = finalResult ? finalResult.reason : "Rewrite failed or was not attempted.";
                 console.log(`[FALLBACK] All generation attempts failed (${failureReason}). Using fallback.`);
-                
-                // Only mark as permanently blocked if we exhausted all recovery options
                 if (finalResult?.status === 'blocked') {
                     console.log(`[CACHE] Marking prompt as permanently blocked after all recovery attempts: ${cacheHash}`);
-                    if (IMAGE_HOSTING_ENABLED) { 
-                        await addToKvCache(cacheHash, { 
-                            blocked: true, 
-                            optimizedPrompt: optimizedDescription,
-                            rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined
-                        }); 
-                    }
-                    else { 
-                        await addToFsCache(cacheHash, { 
-                            blocked: true, 
-                            createdAt: new Date().toISOString(), 
-                            optimizedPrompt: optimizedDescription,
-                            rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined
-                        }); 
-                    }
+                    if (IMAGE_HOSTING_ENABLED) { await addToKvCache(cacheHash, { blocked: true, optimizedPrompt: optimizedDescription, rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined }); }
+                    else { await addToFsCache(cacheHash, { blocked: true, createdAt: new Date().toISOString(), optimizedPrompt: optimizedDescription, rewrittenPrompt: wasRewritten ? finalPromptUsed : undefined }); }
                 }
-                
                 return await createFallbackResponse(description, optimizedDescription, finalPromptUsed, width, height, model, seed);
             }
         }
     }
 
-    if (url.pathname === "/cache/delete" && request.method === "POST") {
-        if (request.headers.get("X-Admin-Token") !== "SUPER_SECRET_ADMIN_TOKEN_CHANGE_ME") { return new Response("Unauthorized", { status: Status.Unauthorized }); }
-        try {
-            const { description, width, height, model, seed: seedFromRequest } = await request.json();
-            const seed = seedFromRequest ?? 42;
-            const hash = await generateCacheHash(description, width, height, model, seed);
-            const deleted = IMAGE_HOSTING_ENABLED ? await deleteFromKvCache(hash) : await deleteFromFsCache(hash);
-            if (deleted) { console.log(`[ADMIN] Deleted cache for hash: ${hash}`); return new Response(`Deleted: ${hash}`, { status: Status.OK }); }
-            else { return new Response(`Not Found: ${hash}`, { status: Status.NotFound }); }
-        } catch (e) { return new Response(`Bad Request: ${e.message}`, { status: Status.BadRequest }); }
-    }
-
-    if (url.pathname === "/status" && request.method === "GET") {
-        return Response.json({ 
-            status: "ok", 
-            backends: backendWeights, 
-            imageHosting: IMAGE_HOSTING_ENABLED,
-            llmOptimization: LLM_OPTIMIZATION_ENABLED ? {
-                enabled: true,
-                apiUrl: LLM_OPTIMIZATION_API_URL,
-                model: LLM_OPTIMIZATION_MODEL,
-                cacheSize: promptOptimizationCache.size
-            } : { enabled: false },
-            deNsfwRewriting: DE_NSFW_ENABLED ? {
-                enabled: true,
-                cacheSize: deNsfwRewriteCache.size
-            } : { enabled: false }
-        });
-    }
-
+    if (url.pathname === "/cache/delete" && request.method === "POST") { if (request.headers.get("X-Admin-Token") !== "SUPER_SECRET_ADMIN_TOKEN_CHANGE_ME") { return new Response("Unauthorized", { status: Status.Unauthorized }); } try { const { description, width, height, model, seed: seedFromRequest } = await request.json(); const seed = seedFromRequest ?? 42; const hash = await generateCacheHash(description, width, height, model, seed); const deleted = IMAGE_HOSTING_ENABLED ? await deleteFromKvCache(hash) : await deleteFromFsCache(hash); if (deleted) { console.log(`[ADMIN] Deleted cache for hash: ${hash}`); return new Response(`Deleted: ${hash}`, { status: Status.OK }); } else { return new Response(`Not Found: ${hash}`, { status: Status.NotFound }); } } catch (e) { return new Response(`Bad Request: ${e.message}`, { status: Status.BadRequest }); } }
+    if (url.pathname === "/status" && request.method === "GET") { return Response.json({ status: "ok", backends: backendWeights, imageHosting: IMAGE_HOSTING_ENABLED, llmOptimization: LLM_OPTIMIZATION_ENABLED ? { enabled: true, apiUrl: LLM_OPTIMIZATION_API_URL, model: LLM_OPTIMIZATION_MODEL, cacheSize: promptOptimizationCache.size } : { enabled: false }, deNsfwRewriting: DE_NSFW_ENABLED ? { enabled: true, cacheSize: deNsfwRewriteCache.size } : { enabled: false } }); }
     return new Response(STATUS_TEXT[Status.NotFound], { status: Status.NotFound });
 }
 
